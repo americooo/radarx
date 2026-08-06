@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RadarX — Attack Surface Monitor</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --panel-2: #1c2230;
+    --border: #2a3140;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #3fb950;
+    --accent-dim: #238636;
+    --warn: #d29922;
+    --danger: #f85149;
+    --blue: #58a6ff;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px; line-height: 1.5;
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 24px; border-bottom: 1px solid var(--border);
+    background: var(--panel); position: sticky; top: 0; z-index: 10;
+  }
+  header .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 16px; }
+  header .brand .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+  header .meta { color: var(--muted); font-size: 12px; font-family: var(--mono); }
+  main { padding: 24px; max-width: 1200px; margin: 0 auto; }
+  .empty { color: var(--muted); text-align: center; padding: 60px 20px; }
+  .target {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; margin-bottom: 20px; overflow: hidden;
+  }
+  .target-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 20px; cursor: pointer; gap: 12px;
+  }
+  .target-head:hover { background: var(--panel-2); }
+  .target-title { display: flex; flex-direction: column; gap: 2px; }
+  .target-title .root { font-weight: 600; font-family: var(--mono); }
+  .target-title .label { color: var(--muted); font-size: 12px; }
+  .counts { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip {
+    font-size: 11px; font-family: var(--mono); padding: 3px 8px;
+    border-radius: 20px; background: var(--panel-2); border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .chip b { color: var(--text); }
+  .status { font-size: 11px; color: var(--muted); font-family: var(--mono); white-space: nowrap; }
+  .status .on { color: var(--accent); }
+  .status .off { color: var(--muted); }
+  .body { border-top: 1px solid var(--border); padding: 16px 20px; display: none; }
+  .body.open { display: block; }
+  .section-title { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 16px 0 8px; }
+  .changes .change { display: flex; gap: 10px; align-items: center; padding: 6px 0; font-family: var(--mono); font-size: 12px; border-bottom: 1px solid var(--border); }
+  .tag { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; min-width: 60px; text-align: center; }
+  .tag.new { background: rgba(63,185,80,.15); color: var(--accent); }
+  .tag.mod { background: rgba(210,153,34,.15); color: var(--warn); }
+  .tag.del { background: rgba(248,81,73,.15); color: var(--danger); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; font-family: var(--mono); }
+  th { text-align: left; color: var(--muted); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid var(--border); position: sticky; }
+  td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  td .code200 { color: var(--accent); }
+  td .code300 { color: var(--blue); }
+  td .code400 { color: var(--warn); }
+  td .code500 { color: var(--danger); }
+  .scroll { max-height: 320px; overflow: auto; border: 1px solid var(--border); border-radius: 6px; }
+  a { color: var(--blue); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .foot { text-align: center; color: var(--muted); font-size: 11px; margin-top: 30px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><span class="dot"></span> RadarX</div>
+  <div class="meta" id="meta">connecting…</div>
+</header>
+<main id="app">
+  <div class="empty">Loading…</div>
+</main>
+<div class="foot">RadarX — local-first attack surface monitor · read-only dashboard · authorized scope only</div>
+
+<script>
+const KIND_ORDER = ["subdomain", "endpoint", "port", "cert"];
+
+function codeClass(c) {
+  if (c >= 500) return "code500";
+  if (c >= 400) return "code400";
+  if (c >= 300) return "code300";
+  if (c >= 200) return "code200";
+  return "";
+}
+function esc(s) {
+  return (s == null ? "" : String(s)).replace(/[&<>"]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+}
+
+function renderChanges(changes) {
+  if (!changes || !changes.length) return '<div style="color:var(--muted);font-size:12px">No recent changes.</div>';
+  const rows = changes.slice(0, 30).map(c => {
+    let tag = 'mod', label = 'CHANGED';
+    if (c.type === 'new') { tag = 'new'; label = 'NEW'; }
+    else if (c.type === 'removed') { tag = 'del'; label = 'REMOVED'; }
+    const detail = c.fields ? ` (${esc(c.fields.join(','))})` : '';
+    return `<div class="change"><span class="tag ${tag}">${label}</span><span>${esc(c.kind)}</span><span>${esc(c.key)}${detail}</span></div>`;
+  }).join('');
+  return `<div class="changes">${rows}</div>`;
+}
+
+function renderEndpoints(assets) {
+  const eps = assets.filter(a => a.kind === 'endpoint');
+  if (!eps.length) return '';
+  const rows = eps.sort((a,b)=> (a.key>b.key?1:-1)).map(a =>
+    `<tr><td><a href="${esc(a.key)}" target="_blank" rel="noopener">${esc(a.key)}</a></td>
+     <td class="${codeClass(a.status_code)}">${a.status_code||''}</td>
+     <td>${esc(a.title||'')}</td><td>${esc(a.server||'')}</td></tr>`
+  ).join('');
+  return `<div class="section-title">HTTP Endpoints (${eps.length})</div>
+    <div class="scroll"><table><thead><tr><th>URL</th><th>Status</th><th>Title</th><th>Server</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+function renderSubdomains(assets) {
+  const subs = assets.filter(a => a.kind === 'subdomain');
+  if (!subs.length) return '';
+  const rows = subs.sort((a,b)=> (a.host>b.host?1:-1)).map(a =>
+    `<tr><td>${esc(a.host)}</td><td>${esc((a.ip||[]).join(', '))}</td></tr>`
+  ).join('');
+  return `<div class="section-title">Subdomains (${subs.length})</div>
+    <div class="scroll"><table><thead><tr><th>Host</th><th>IP</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+function renderPorts(assets) {
+  const ports = assets.filter(a => a.kind === 'port');
+  if (!ports.length) return '';
+  const byHost = {};
+  ports.forEach(p => { (byHost[p.host] ||= []).push(p.port); });
+  const rows = Object.keys(byHost).sort().map(h =>
+    `<tr><td>${esc(h)}</td><td>${byHost[h].sort((a,b)=>a-b).join(', ')}</td></tr>`
+  ).join('');
+  return `<div class="section-title">Open Ports</div>
+    <div class="scroll"><table><thead><tr><th>Host</th><th>Ports</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+function targetCard(t) {
+  const counts = KIND_ORDER
+    .filter(k => t.asset_counts[k])
+    .map(k => `<span class="chip"><b>${t.asset_counts[k]}</b> ${k}</span>`).join('');
+  const last = t.last_scan_at ? new Date(t.last_scan_at).toLocaleString() : 'never';
+  const statusDot = t.enabled ? '<span class="on">● watching</span>' : '<span class="off">○ paused</span>';
+
+  return `
+  <div class="target">
+    <div class="target-head" onclick="this.parentElement.querySelector('.body').classList.toggle('open')">
+      <div class="target-title">
+        <span class="root">${esc(t.root)}</span>
+        ${t.label ? `<span class="label">${esc(t.label)}</span>` : ''}
+      </div>
+      <div class="counts">${counts || '<span class="chip">no assets yet</span>'}</div>
+      <div class="status">${statusDot}<br>every ${t.interval_m}m · last ${esc(last)}</div>
+    </div>
+    <div class="body">
+      <div class="section-title">Recent Changes</div>
+      ${renderChanges(t.recent_changes)}
+      ${renderSubdomains(t.assets)}
+      ${renderEndpoints(t.assets)}
+      ${renderPorts(t.assets)}
+    </div>
+  </div>`;
+}
+
+async function refresh() {
+  try {
+    const r = await fetch('/api/state');
+    const data = await r.json();
+    document.getElementById('meta').textContent =
+      `${data.targets.length} targets · updated ${new Date(data.generated_at).toLocaleTimeString()}`;
+    const app = document.getElementById('app');
+    if (!data.targets.length) {
+      app.innerHTML = '<div class="empty">No targets yet.<br>Add one:  <code>radarx add example.com</code></div>';
+      return;
+    }
+    app.innerHTML = data.targets.map(targetCard).join('');
+  } catch (e) {
+    document.getElementById('meta').textContent = 'disconnected — is radarx running?';
+  }
+}
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>
