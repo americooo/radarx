@@ -1,0 +1,17 @@
+# Binaries
+/radarx
+/radarx.exe
+/dist/
+*.exe
+*.test
+*.out
+
+# RadarX runtime data (never commit scan results / scopes)
+.radarx/
+*.local.env
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
