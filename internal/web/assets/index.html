@@ -149,16 +149,28 @@ function renderPorts(assets) {
     <div class="scroll"><table><thead><tr><th>Host</th><th>Ports</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
+// Remembers which target cards the user has expanded, so a background refresh
+// never snaps them shut.
+const expanded = new Set();
+
+function toggleTarget(id) {
+  if (expanded.has(id)) expanded.delete(id);
+  else expanded.add(id);
+  const body = document.querySelector(`.target[data-id="${CSS.escape(id)}"] .body`);
+  if (body) body.classList.toggle('open', expanded.has(id));
+}
+
 function targetCard(t) {
   const counts = KIND_ORDER
     .filter(k => t.asset_counts[k])
     .map(k => `<span class="chip"><b>${t.asset_counts[k]}</b> ${k}</span>`).join('');
   const last = t.last_scan_at ? new Date(t.last_scan_at).toLocaleString() : 'never';
   const statusDot = t.enabled ? '<span class="on">● watching</span>' : '<span class="off">○ paused</span>';
+  const openCls = expanded.has(t.id) ? ' open' : '';
 
   return `
-  <div class="target">
-    <div class="target-head" onclick="this.parentElement.querySelector('.body').classList.toggle('open')">
+  <div class="target" data-id="${esc(t.id)}">
+    <div class="target-head" onclick="toggleTarget('${esc(t.id)}')">
       <div class="target-title">
         <span class="root">${esc(t.root)}</span>
         ${t.label ? `<span class="label">${esc(t.label)}</span>` : ''}
@@ -166,7 +178,7 @@ function targetCard(t) {
       <div class="counts">${counts || '<span class="chip">no assets yet</span>'}</div>
       <div class="status">${statusDot}<br>every ${t.interval_m}m · last ${esc(last)}</div>
     </div>
-    <div class="body">
+    <div class="body${openCls}">
       <div class="section-title">Recent Changes</div>
       ${renderChanges(t.recent_changes)}
       ${renderSubdomains(t.assets)}
@@ -176,18 +188,29 @@ function targetCard(t) {
   </div>`;
 }
 
+let lastSignature = "";
+
 async function refresh() {
   try {
     const r = await fetch('/api/state');
     const data = await r.json();
     document.getElementById('meta').textContent =
       `${data.targets.length} targets · updated ${new Date(data.generated_at).toLocaleTimeString()}`;
+
     const app = document.getElementById('app');
     if (!data.targets.length) {
+      lastSignature = "empty";
       app.innerHTML = '<div class="empty">No targets yet.<br>Add one:  <code>radarx add example.com</code></div>';
       return;
     }
-    app.innerHTML = data.targets.map(targetCard).join('');
+
+    // Only re-draw the cards when the actual data changed. This stops the 5s
+    // refresh from wiping your scroll position or flickering the page.
+    const signature = JSON.stringify(data.targets);
+    if (signature !== lastSignature) {
+      lastSignature = signature;
+      app.innerHTML = data.targets.map(targetCard).join('');
+    }
   } catch (e) {
     document.getElementById('meta').textContent = 'disconnected — is radarx running?';
   }
