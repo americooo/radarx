@@ -354,7 +354,7 @@ func TestSQLiteDiffAcrossTwoScans(t *testing.T) {
 		TargetID: "t1", Root: "t1.com", TakenAt: first.TakenAt.Add(time.Hour),
 		Assets: []model.Asset{
 			{Kind: model.KindSubdomain, Key: "www.t1.com", Host: "www.t1.com"},
-			{Kind: model.KindSubdomain, Key: "admin.t1.com", Host: "admin.t1.com"}, // new
+			{Kind: model.KindSubdomain, Key: "admin.t1.com", Host: "admin.t1.com"},                                                        // new
 			{Kind: model.KindEndpoint, Key: "https://www.t1.com", Host: "www.t1.com", Scheme: "https", StatusCode: 200, Title: "Welcome"}, // modified
 		},
 	}

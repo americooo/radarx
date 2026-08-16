@@ -16,21 +16,24 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.25.0"
 
       - name: Verify formatting
         run: |
           gofmt -l . | tee /tmp/fmt.out
           test ! -s /tmp/fmt.out
 
+      # cmd/radarx-gui needs cgo + libgtk-3/libwebkit2gtk system packages and
+      # its own OS build matrix — that's handled by the dedicated GUI/release
+      # workflow, not this fast CLI+library sanity job.
       - name: Vet
-        run: go vet ./...
+        run: go vet $(go list ./... | grep -v /cmd/radarx-gui)
 
       - name: Test
-        run: go test -race ./...
+        run: go test -race $(go list ./... | grep -v /cmd/radarx-gui)
 
       - name: Build
-        run: go build ./...
+        run: go build $(go list ./... | grep -v /cmd/radarx-gui)
 
   cross-compile:
     name: cross-compile
@@ -49,7 +52,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.25.0"
       - name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
         env:
           GOOS: ${{ matrix.goos }}
