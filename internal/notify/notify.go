@@ -8,24 +8,50 @@ package notify
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/americooo/radarx/internal/model"
+	"github.com/americooo/radarx/internal/store"
 )
 
 // Default assembles the standard set of notification channels: console and
-// desktop are always on, Telegram is added only if credentials are available
-// (environment variables or the local config saved from the GUI's Settings
-// screen — see Credentials). Both the CLI and the GUI use this so their
+// desktop are always on, Telegram is added only if a token+chatID are given
+// (resolve them from env vars or the SQLite settings table before calling
+// this — see ResolveCredentials). Both the CLI and the GUI use this so their
 // notification behaviour never drifts apart.
-func Default() Notifier {
+func Default(telegramToken, telegramChatID string) Notifier {
 	channels := []Notifier{Console{}, Desktop{}}
-	if token, chatID, ok := Credentials(); ok {
-		if tg, ok := NewTelegram(token, chatID); ok {
-			channels = append(channels, tg)
-		}
+	if tg, ok := NewTelegram(telegramToken, telegramChatID); ok {
+		channels = append(channels, tg)
 	}
 	return Multi{Notifiers: channels}
+}
+
+// ResolveCredentials resolves the Telegram token/chat id to use: environment
+// variables (RADARX_TG_TOKEN / RADARX_TG_CHAT_ID) take priority — useful for
+// CI, scripting, or power users — falling back to the SQLite settings table
+// (telegram_token / telegram_chat_id, saved from the GUI's Settings screen).
+// ok is false if either half is missing from both sources.
+func ResolveCredentials(st *store.SQLiteStore) (token, chatID string, ok bool) {
+	token, chatID = os.Getenv("RADARX_TG_TOKEN"), os.Getenv("RADARX_TG_CHAT_ID")
+	if token != "" && chatID != "" {
+		return token, chatID, true
+	}
+	if st == nil {
+		return token, chatID, false
+	}
+	if token == "" {
+		if v, has, err := st.GetSetting("telegram_token"); err == nil && has {
+			token = v
+		}
+	}
+	if chatID == "" {
+		if v, has, err := st.GetSetting("telegram_chat_id"); err == nil && has {
+			chatID = v
+		}
+	}
+	return token, chatID, token != "" && chatID != ""
 }
 
 // Notifier delivers a diff result somewhere the operator will see it.

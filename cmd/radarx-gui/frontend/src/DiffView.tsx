@@ -1,34 +1,37 @@
 import {useEffect, useState} from 'react';
 import {GetDiff, ListTargets} from '../wailsjs/go/main/App';
 import {model} from '../wailsjs/go/models';
+import {pluralKey, useI18n} from './i18n/LanguageContext';
+import type {TranslationKey} from './i18n/translations';
 
 function changeRowClass(type: string): string {
     switch (type) {
         case 'new':
-            return 'border-t border-slate-800 bg-emerald-950/40';
+            return 'border-t border-blue-900/30 bg-blue-950/40';
         case 'removed':
-            return 'border-t border-slate-800 bg-red-950/40';
+            return 'border-t border-blue-900/30 bg-red-950/40';
         case 'modified':
-            return 'border-t border-slate-800 bg-amber-950/40';
+            return 'border-t border-blue-900/30 bg-amber-950/40';
         default:
-            return 'border-t border-slate-800';
+            return 'border-t border-blue-900/30';
     }
 }
 
-function changeLabel(type: string): {text: string; className: string} {
+function changeLabel(type: string, t: (key: TranslationKey) => string): {text: string; className: string} {
     switch (type) {
         case 'new':
-            return {text: '+ NEW', className: 'text-emerald-400'};
+            return {text: t('diff.new'), className: 'text-blue-400'};
         case 'removed':
-            return {text: '- REMOVED', className: 'text-red-400'};
+            return {text: t('diff.removed'), className: 'text-red-400'};
         case 'modified':
-            return {text: '~ CHANGED', className: 'text-amber-400'};
+            return {text: t('diff.modified'), className: 'text-amber-400'};
         default:
             return {text: type, className: 'text-slate-400'};
     }
 }
 
 function DiffView() {
+    const {t} = useI18n();
     const [targets, setTargets] = useState<model.Target[]>([]);
     const [selected, setSelected] = useState('');
     const [result, setResult] = useState<model.DiffResult | null>(null);
@@ -65,27 +68,27 @@ function DiffView() {
 
     return (
         <div>
-            <h1 className="text-2xl font-bold tracking-tight text-emerald-400">Diff / Changes</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-blue-400">{t('diff.title')}</h1>
             <p className="mt-1 text-sm text-slate-400">
-                What changed between the two most recent scans of a target.
+                {t('diff.subtitle')}
             </p>
 
             <div className="mt-6">
                 <select
-                    className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none"
+                    className="rounded-md border border-blue-900/40 bg-slate-900/40 px-3 py-2 text-sm backdrop-blur-md focus:border-blue-500 focus:outline-none"
                     value={selected}
                     onChange={(e) => setSelected(e.target.value)}
                 >
-                    {targets.length === 0 && <option value="">No targets</option>}
-                    {targets.map((t) => (
-                        <option key={t.id} value={t.id}>
-                            {t.root}
+                    {targets.length === 0 && <option value="">{t('diff.noTargets')}</option>}
+                    {targets.map((tgt) => (
+                        <option key={tgt.id} value={tgt.id}>
+                            {tgt.root}
                         </option>
                     ))}
                 </select>
             </div>
 
-            {loading && <p className="mt-4 text-sm text-slate-500">Loading...</p>}
+            {loading && <p className="mt-4 text-sm text-slate-500">{t('diff.loading')}</p>}
 
             {!loading && diffErr && (
                 <div className="mt-4 rounded-md border border-slate-700 bg-slate-900/50 px-3 py-2 text-sm text-slate-400">
@@ -96,29 +99,31 @@ function DiffView() {
             {!loading && result && (
                 <>
                     <div className="mt-4 flex gap-4 text-sm text-slate-500">
-                        <span>{result.changes.length} total change{result.changes.length === 1 ? '' : 's'}</span>
+                        <span>
+                            {result.changes.length} {t(pluralKey('diff.totalChanges', result.changes.length))}
+                        </span>
                     </div>
 
-                    <div className="mt-3 overflow-hidden rounded-md border border-slate-800">
+                    <div className="mt-3 overflow-hidden rounded-md border border-blue-900/40 bg-slate-900/20 backdrop-blur-md">
                         <table className="w-full text-left text-sm">
-                            <thead className="bg-slate-900 text-slate-400">
+                            <thead className="bg-slate-900/60 text-slate-400">
                                 <tr>
-                                    <th className="px-3 py-2 font-medium">Change</th>
-                                    <th className="px-3 py-2 font-medium">Kind</th>
-                                    <th className="px-3 py-2 font-medium">Key</th>
-                                    <th className="px-3 py-2 font-medium">Fields</th>
+                                    <th className="px-3 py-2 font-medium">{t('diff.colChange')}</th>
+                                    <th className="px-3 py-2 font-medium">{t('diff.colKind')}</th>
+                                    <th className="px-3 py-2 font-medium">{t('diff.colKey')}</th>
+                                    <th className="px-3 py-2 font-medium">{t('diff.colFields')}</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {result.changes.length === 0 && (
                                     <tr>
                                         <td colSpan={4} className="px-3 py-6 text-center text-slate-500">
-                                            No changes between the last two scans.
+                                            {t('diff.noChanges')}
                                         </td>
                                     </tr>
                                 )}
                                 {result.changes.map((c, i) => {
-                                    const label = changeLabel(c.type);
+                                    const label = changeLabel(c.type, t);
                                     return (
                                         <tr key={`${c.type}-${c.key}-${i}`} className={changeRowClass(c.type)}>
                                             <td className={`px-3 py-2 font-medium ${label.className}`}>{label.text}</td>

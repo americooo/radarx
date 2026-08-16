@@ -8,15 +8,13 @@ import (
 	"time"
 
 	"github.com/americooo/radarx/internal/model"
-	"github.com/americooo/radarx/internal/notify"
 	"github.com/americooo/radarx/internal/store"
 )
 
 // testApp builds an App with a fresh SQLite store under t.TempDir(). These
 // methods don't touch a.ctx, so they can be exercised directly without a
 // running Wails runtime — mirrors the store test pattern in
-// internal/store/sqlite_test.go. scopePath()/storePath() read $HOME, so
-// tests that need to control the scope file also call t.Setenv("HOME", dir).
+// internal/store/sqlite_test.go.
 func testApp(t *testing.T) *App {
 	t.Helper()
 	dir := t.TempDir()
@@ -50,19 +48,11 @@ func TestListTargetsNoStore(t *testing.T) {
 }
 
 func TestAddTargetWithoutScopeFails(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("HOME", dir)
+	a := testApp(t)
 
-	st, err := store.NewSQLiteStore(filepath.Join(dir, ".radarx", "radarx.db"))
-	if err != nil {
-		t.Fatalf("NewSQLiteStore: %v", err)
-	}
-	t.Cleanup(func() { st.Close() })
-	a := &App{st: st}
-
-	err = a.AddTarget("example.com", "test", 60)
+	err := a.AddTarget("example.com", "test", 60)
 	if err == nil {
-		t.Fatal("expected AddTarget to fail without a scope file")
+		t.Fatal("expected AddTarget to fail without any scope configured")
 	}
 	if !strings.Contains(err.Error(), "not authorized") {
 		t.Fatalf("expected 'not authorized' error, got: %v", err)
@@ -78,25 +68,12 @@ func TestAddTargetWithoutScopeFails(t *testing.T) {
 }
 
 func TestAddTargetOutOfScopeFails(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("HOME", dir)
-
-	radarxDir := filepath.Join(dir, ".radarx")
-	if err := os.MkdirAll(radarxDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(radarxDir, "scope.txt"), []byte("other.com\n"), 0o644); err != nil {
+	a := testApp(t)
+	if err := a.st.AddScopeRoot("other.com"); err != nil {
 		t.Fatal(err)
 	}
 
-	st, err := store.NewSQLiteStore(filepath.Join(radarxDir, "radarx.db"))
-	if err != nil {
-		t.Fatalf("NewSQLiteStore: %v", err)
-	}
-	t.Cleanup(func() { st.Close() })
-	a := &App{st: st}
-
-	err = a.AddTarget("example.com", "test", 60)
+	err := a.AddTarget("example.com", "test", 60)
 	if err == nil {
 		t.Fatal("expected AddTarget to fail for a domain outside scope")
 	}
@@ -106,23 +83,10 @@ func TestAddTargetOutOfScopeFails(t *testing.T) {
 }
 
 func TestAddTargetInScopeSucceeds(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("HOME", dir)
-
-	radarxDir := filepath.Join(dir, ".radarx")
-	if err := os.MkdirAll(radarxDir, 0o755); err != nil {
+	a := testApp(t)
+	if err := a.st.AddScopeRoot("example.com"); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(radarxDir, "scope.txt"), []byte("example.com\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	st, err := store.NewSQLiteStore(filepath.Join(radarxDir, "radarx.db"))
-	if err != nil {
-		t.Fatalf("NewSQLiteStore: %v", err)
-	}
-	t.Cleanup(func() { st.Close() })
-	a := &App{st: st}
 
 	if err := a.AddTarget("api.example.com", "Acme", 30); err != nil {
 		t.Fatalf("AddTarget: %v", err)
@@ -141,85 +105,71 @@ func TestAddTargetInScopeSucceeds(t *testing.T) {
 	}
 }
 
-func TestAuthorizeTargetCreatesScopeFile(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("HOME", dir)
-
-	a := &App{}
+func TestAuthorizeTargetCreatesScopeEntry(t *testing.T) {
+	a := testApp(t)
 	if err := a.AuthorizeTarget("newco.com"); err != nil {
 		t.Fatalf("AuthorizeTarget: %v", err)
 	}
 
-	sp := filepath.Join(dir, ".radarx", "scope.txt")
-	data, err := os.ReadFile(sp)
+	roots, err := a.st.ListScopeRoots()
 	if err != nil {
-		t.Fatalf("expected scope file to be created: %v", err)
+		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "newco.com") {
-		t.Fatalf("expected scope file to contain newco.com, got: %s", data)
+	if len(roots) != 1 || roots[0] != "newco.com" {
+		t.Fatalf("expected scope to contain newco.com, got: %v", roots)
 	}
 }
 
-func TestAuthorizeTargetAppendsToExistingScopeFile(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("HOME", dir)
-
-	radarxDir := filepath.Join(dir, ".radarx")
-	if err := os.MkdirAll(radarxDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	sp := filepath.Join(radarxDir, "scope.txt")
-	if err := os.WriteFile(sp, []byte("existing.com\n"), 0o644); err != nil {
+func TestAuthorizeTargetAppendsToExistingScope(t *testing.T) {
+	a := testApp(t)
+	if err := a.st.AddScopeRoot("existing.com"); err != nil {
 		t.Fatal(err)
 	}
 
-	a := &App{}
 	if err := a.AuthorizeTarget("newco.com"); err != nil {
 		t.Fatalf("AuthorizeTarget: %v", err)
 	}
 
-	data, err := os.ReadFile(sp)
+	roots, err := a.st.ListScopeRoots()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "existing.com") || !strings.Contains(string(data), "newco.com") {
-		t.Fatalf("expected scope file to contain both domains, got: %s", data)
+	if len(roots) != 2 {
+		t.Fatalf("expected both domains in scope, got: %v", roots)
 	}
 }
 
 func TestAuthorizeTargetIsIdempotentForAlreadyAuthorizedDomain(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("HOME", dir)
-
-	radarxDir := filepath.Join(dir, ".radarx")
-	if err := os.MkdirAll(radarxDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	sp := filepath.Join(radarxDir, "scope.txt")
-	if err := os.WriteFile(sp, []byte("example.com\n"), 0o644); err != nil {
+	a := testApp(t)
+	if err := a.st.AddScopeRoot("example.com"); err != nil {
 		t.Fatal(err)
 	}
 
-	a := &App{}
-	if err := a.AuthorizeTarget("api.example.com"); err != nil {
+	if err := a.AuthorizeTarget("example.com"); err != nil {
 		t.Fatalf("AuthorizeTarget: %v", err)
 	}
 
-	data, err := os.ReadFile(sp)
+	roots, err := a.st.ListScopeRoots()
 	if err != nil {
 		t.Fatal(err)
 	}
-	// api.example.com is already covered by example.com; AuthorizeTarget
-	// should not append a redundant line.
-	if strings.Contains(string(data), "api.example.com") {
-		t.Fatalf("expected no redundant append for already-covered domain, got: %s", data)
+	if len(roots) != 1 {
+		t.Fatalf("expected no duplicate scope entry, got: %v", roots)
 	}
 }
 
 func TestGetScopeRootsMissingFile(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("HOME", dir)
+	a := testApp(t)
+	roots, err := a.GetScopeRoots()
+	if err != nil {
+		t.Fatalf("GetScopeRoots: %v", err)
+	}
+	if len(roots) != 0 {
+		t.Fatalf("expected empty roots, got %v", roots)
+	}
+}
 
+func TestGetScopeRootsNoStore(t *testing.T) {
 	a := &App{}
 	roots, err := a.GetScopeRoots()
 	if err != nil {
@@ -231,18 +181,14 @@ func TestGetScopeRootsMissingFile(t *testing.T) {
 }
 
 func TestGetScopeRootsPopulated(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("HOME", dir)
-
-	radarxDir := filepath.Join(dir, ".radarx")
-	if err := os.MkdirAll(radarxDir, 0o755); err != nil {
+	a := testApp(t)
+	if err := a.st.AddScopeRoot("a.com"); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(radarxDir, "scope.txt"), []byte("a.com\nb.com\n"), 0o644); err != nil {
+	if err := a.st.AddScopeRoot("b.com"); err != nil {
 		t.Fatal(err)
 	}
 
-	a := &App{}
 	roots, err := a.GetScopeRoots()
 	if err != nil {
 		t.Fatalf("GetScopeRoots: %v", err)
@@ -420,9 +366,6 @@ func TestExportReportWritesFile(t *testing.T) {
 }
 
 func TestMonitoringStateTransitions(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("HOME", dir)
-
 	a := testApp(t)
 
 	if a.IsMonitoring() {
@@ -458,42 +401,43 @@ func TestStartMonitoringNoStore(t *testing.T) {
 }
 
 func TestSaveTelegramTokenEmpty(t *testing.T) {
-	a := &App{}
+	a := testApp(t)
 	if err := a.SaveTelegramToken("  "); err == nil {
 		t.Fatal("expected error for blank token")
 	}
 }
 
-func TestSaveTelegramTokenPersists(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("HOME", dir)
-
+func TestSaveTelegramTokenNoStore(t *testing.T) {
 	a := &App{}
+	if err := a.SaveTelegramToken("tok123"); err == nil {
+		t.Fatal("expected error when store is not available")
+	}
+}
+
+func TestSaveTelegramTokenPersists(t *testing.T) {
+	a := testApp(t)
 	if err := a.SaveTelegramToken("tok123"); err != nil {
 		t.Fatalf("SaveTelegramToken: %v", err)
 	}
 
-	cfg, err := notify.LoadConfig()
+	token, ok, err := a.st.GetSetting("telegram_token")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.TelegramToken != "tok123" {
-		t.Fatalf("expected token to be saved, got %+v", cfg)
+	if !ok || token != "tok123" {
+		t.Fatalf("expected token to be saved, got %q ok=%v", token, ok)
 	}
 }
 
 func TestSaveTelegramChatIDEmpty(t *testing.T) {
-	a := &App{}
+	a := testApp(t)
 	if err := a.SaveTelegramChatID("  "); err == nil {
 		t.Fatal("expected error for blank chat id")
 	}
 }
 
 func TestSaveTelegramChatIDPersistsAlongsideToken(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("HOME", dir)
-
-	a := &App{}
+	a := testApp(t)
 	if err := a.SaveTelegramToken("tok123"); err != nil {
 		t.Fatalf("SaveTelegramToken: %v", err)
 	}
@@ -501,47 +445,42 @@ func TestSaveTelegramChatIDPersistsAlongsideToken(t *testing.T) {
 		t.Fatalf("SaveTelegramChatID: %v", err)
 	}
 
-	cfg, err := notify.LoadConfig()
+	token, _, err := a.st.GetSetting("telegram_token")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.TelegramToken != "tok123" || cfg.TelegramChatID != "999" {
-		t.Fatalf("expected both token and chat id saved, got %+v", cfg)
+	chatID, _, err := a.st.GetSetting("telegram_chat_id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token != "tok123" || chatID != "999" {
+		t.Fatalf("expected both token and chat id saved, got token=%q chatID=%q", token, chatID)
 	}
 }
 
 func TestDetectTelegramChatIDWithoutSavedToken(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("HOME", dir)
-
-	a := &App{}
+	a := testApp(t)
 	if _, err := a.DetectTelegramChatID(); err == nil {
 		t.Fatal("expected error when no token has been saved yet")
 	}
 }
 
 func TestSendTelegramTestWithoutCredentials(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("HOME", dir)
 	t.Setenv("RADARX_TG_TOKEN", "")
 	t.Setenv("RADARX_TG_CHAT_ID", "")
 
-	a := &App{}
+	a := testApp(t)
 	if err := a.SendTelegramTest(); err == nil {
 		t.Fatal("expected error when no Telegram credentials are configured")
 	}
 }
 
 func TestGetTelegramStatus(t *testing.T) {
-	// Isolate HOME: GetTelegramStatus now also falls back to
-	// ~/.radarx/config.json, and a real one may exist on the machine
-	// running this test once Telegram is configured through the actual app.
-	t.Setenv("HOME", t.TempDir())
 	t.Setenv("RADARX_TG_TOKEN", "")
 	t.Setenv("RADARX_TG_CHAT_ID", "")
-	a := &App{}
+	a := testApp(t)
 	if a.GetTelegramStatus() {
-		t.Fatal("expected telegram status false when env vars are empty")
+		t.Fatal("expected telegram status false when nothing is configured")
 	}
 
 	t.Setenv("RADARX_TG_TOKEN", "tok")

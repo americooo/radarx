@@ -1,6 +1,8 @@
 package store
 
 import (
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -395,6 +397,201 @@ func TestSQLiteDiffAcrossTwoScans(t *testing.T) {
 	}
 	if !latest.TakenAt.Equal(second.TakenAt) {
 		t.Fatalf("LatestSnapshot mismatch: got %v, want %v", latest.TakenAt, second.TakenAt)
+	}
+}
+
+func TestSQLiteScopeRoots(t *testing.T) {
+	s := openTestStore(t)
+
+	has, err := s.HasScope()
+	if err != nil {
+		t.Fatalf("HasScope: %v", err)
+	}
+	if has {
+		t.Fatal("expected HasScope to be false on an empty store")
+	}
+	roots, err := s.ListScopeRoots()
+	if err != nil {
+		t.Fatalf("ListScopeRoots: %v", err)
+	}
+	if len(roots) != 0 {
+		t.Fatalf("expected no scope roots, got %v", roots)
+	}
+
+	for _, r := range []string{"zeta.com", "alpha.com", "alpha.com"} { // duplicate on purpose
+		if err := s.AddScopeRoot(r); err != nil {
+			t.Fatalf("AddScopeRoot(%q): %v", r, err)
+		}
+	}
+
+	has, err = s.HasScope()
+	if err != nil {
+		t.Fatalf("HasScope: %v", err)
+	}
+	if !has {
+		t.Fatal("expected HasScope to be true after adding a root")
+	}
+
+	roots, err = s.ListScopeRoots()
+	if err != nil {
+		t.Fatalf("ListScopeRoots: %v", err)
+	}
+	want := []string{"alpha.com", "zeta.com"}
+	if len(roots) != len(want) {
+		t.Fatalf("expected %v (dedup'd, sorted), got %v", want, roots)
+	}
+	for i, w := range want {
+		if roots[i] != w {
+			t.Fatalf("expected %v, got %v", want, roots)
+		}
+	}
+}
+
+func TestSQLiteSettings(t *testing.T) {
+	s := openTestStore(t)
+
+	if _, ok, err := s.GetSetting("telegram_token"); err != nil {
+		t.Fatalf("GetSetting: %v", err)
+	} else if ok {
+		t.Fatal("expected ok=false for unset setting")
+	}
+
+	if err := s.SetSetting("telegram_token", "tok1"); err != nil {
+		t.Fatalf("SetSetting: %v", err)
+	}
+	v, ok, err := s.GetSetting("telegram_token")
+	if err != nil {
+		t.Fatalf("GetSetting: %v", err)
+	}
+	if !ok || v != "tok1" {
+		t.Fatalf("expected tok1, got %q ok=%v", v, ok)
+	}
+
+	// Overwrite (upsert).
+	if err := s.SetSetting("telegram_token", "tok2"); err != nil {
+		t.Fatalf("SetSetting (update): %v", err)
+	}
+	v, ok, err = s.GetSetting("telegram_token")
+	if err != nil {
+		t.Fatalf("GetSetting: %v", err)
+	}
+	if !ok || v != "tok2" {
+		t.Fatalf("expected tok2 after upsert, got %q ok=%v", v, ok)
+	}
+}
+
+// TestSQLiteMigrationFromScopeAndConfigFiles verifies that pointing
+// NewSQLiteStore at a directory that already has legacy scope.txt and
+// config.json files (but empty scope/settings tables) imports their data in
+// exactly once, mirroring TestSQLiteMigrationFromJSONStore for targets.
+func TestSQLiteMigrationFromScopeAndConfigFiles(t *testing.T) {
+	root := t.TempDir()
+
+	scopeContent := "# comment\ncsclub.uz\nkun.uz\n\nbekcoders.uz\n"
+	if err := os.WriteFile(filepath.Join(root, "scope.txt"), []byte(scopeContent), 0o644); err != nil {
+		t.Fatalf("write scope.txt: %v", err)
+	}
+
+	cfg := struct {
+		TelegramToken  string `json:"telegram_token"`
+		TelegramChatID string `json:"telegram_chat_id"`
+	}{TelegramToken: "tok-abc", TelegramChatID: "chat-123"}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "config.json"), data, 0o600); err != nil {
+		t.Fatalf("write config.json: %v", err)
+	}
+
+	dbPath := filepath.Join(root, "radarx.db")
+	s, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer s.Close()
+
+	roots, err := s.ListScopeRoots()
+	if err != nil {
+		t.Fatalf("ListScopeRoots: %v", err)
+	}
+	want := []string{"bekcoders.uz", "csclub.uz", "kun.uz"}
+	if len(roots) != len(want) {
+		t.Fatalf("expected migrated roots %v, got %v", want, roots)
+	}
+	for i, w := range want {
+		if roots[i] != w {
+			t.Fatalf("expected migrated roots %v, got %v", want, roots)
+		}
+	}
+
+	token, ok, err := s.GetSetting("telegram_token")
+	if err != nil {
+		t.Fatalf("GetSetting(telegram_token): %v", err)
+	}
+	if !ok || token != "tok-abc" {
+		t.Fatalf("expected migrated telegram_token=tok-abc, got %q ok=%v", token, ok)
+	}
+	chatID, ok, err := s.GetSetting("telegram_chat_id")
+	if err != nil {
+		t.Fatalf("GetSetting(telegram_chat_id): %v", err)
+	}
+	if !ok || chatID != "chat-123" {
+		t.Fatalf("expected migrated telegram_chat_id=chat-123, got %q ok=%v", chatID, ok)
+	}
+
+	// The legacy files must be left on disk, untouched.
+	if _, err := os.Stat(filepath.Join(root, "scope.txt")); err != nil {
+		t.Fatalf("expected scope.txt to remain on disk: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "config.json")); err != nil {
+		t.Fatalf("expected config.json to remain on disk: %v", err)
+	}
+}
+
+// TestSQLiteMigrationSkipsScopeAndConfigWhenAlreadyPopulated ensures the
+// one-time scope/settings import doesn't run again (or duplicate/overwrite
+// data) once the tables already have entries.
+func TestSQLiteMigrationSkipsScopeAndConfigWhenAlreadyPopulated(t *testing.T) {
+	root := t.TempDir()
+
+	dbPath := filepath.Join(root, "radarx.db")
+	s, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	must(t, s.AddScopeRoot("fresh.com"))
+	must(t, s.SetSetting("telegram_token", "fresh-token"))
+	s.Close()
+
+	// Legacy files with different data appear alongside the DB afterwards.
+	if err := os.WriteFile(filepath.Join(root, "scope.txt"), []byte("legacy.com\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "config.json"), []byte(`{"telegram_token":"legacy-token"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	s2, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore (reopen): %v", err)
+	}
+	defer s2.Close()
+
+	roots, err := s2.ListScopeRoots()
+	if err != nil {
+		t.Fatalf("ListScopeRoots: %v", err)
+	}
+	if len(roots) != 1 || roots[0] != "fresh.com" {
+		t.Fatalf("expected scope migration to be skipped, got %v", roots)
+	}
+
+	token, ok, err := s2.GetSetting("telegram_token")
+	if err != nil {
+		t.Fatalf("GetSetting: %v", err)
+	}
+	if !ok || token != "fresh-token" {
+		t.Fatalf("expected settings migration to be skipped, got %q ok=%v", token, ok)
 	}
 }
 

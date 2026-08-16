@@ -1,6 +1,7 @@
 import {useEffect, useRef, useState} from 'react';
 import {StartScan, StopScan} from '../wailsjs/go/main/App';
 import {EventsOff, EventsOn} from '../wailsjs/runtime/runtime';
+import {pluralKey, useI18n} from './i18n/LanguageContext';
 
 // Mirrors internal/model.Asset (JSON tags) — only the fields the UI shows.
 export interface Asset {
@@ -32,21 +33,23 @@ export function assetDetail(a: Asset): string {
 }
 
 function StatusBadge({status}: {status: ScanStatus}) {
+    const {t} = useI18n();
     const styles: Record<ScanStatus, string> = {
         idle: 'bg-slate-800 text-slate-300',
-        running: 'bg-emerald-900 text-emerald-300 animate-pulse',
-        done: 'bg-emerald-900 text-emerald-300',
+        running: 'bg-blue-900 text-blue-300 animate-pulse',
+        done: 'bg-blue-900 text-blue-300',
         stopped: 'bg-amber-900 text-amber-300',
         error: 'bg-red-900 text-red-300',
     };
     return (
         <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${styles[status]}`}>
-            {status}
+            {t(`scan.status.${status}` as const)}
         </span>
     );
 }
 
 function ScanView() {
+    const {t} = useI18n();
     const [target, setTarget] = useState('');
     const [assets, setAssets] = useState<Asset[]>([]);
     const [status, setStatus] = useState<ScanStatus>('idle');
@@ -100,31 +103,31 @@ function ScanView() {
 
     return (
         <div>
-            <h1 className="text-2xl font-bold tracking-tight text-emerald-400">
-                RadarX
+            <h1 className="text-2xl font-bold tracking-tight text-blue-400">
+                {t('scan.title')}
             </h1>
             <p className="mt-1 text-sm text-slate-400">
-                Attack surface scanner — enter a target domain and scan.
+                {t('scan.subtitle')}
             </p>
 
             <div className="mt-6 flex gap-3">
                 <input
-                    className="flex-1 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm
-                               placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none"
+                    className="flex-1 rounded-md border border-blue-900/40 bg-slate-900/40 px-3 py-2 text-sm backdrop-blur-md
+                               placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
                     type="text"
-                    placeholder="example.com"
+                    placeholder={t('scan.placeholder')}
                     value={target}
                     disabled={running}
                     onChange={(e) => setTarget(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleScan()}
                 />
                 <button
-                    className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white
-                               hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white
+                               hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
                     onClick={handleScan}
                     disabled={running || !target.trim()}
                 >
-                    Scan
+                    {t('scan.scanButton')}
                 </button>
                 <button
                     className="rounded-md bg-red-700 px-4 py-2 text-sm font-medium text-white
@@ -132,15 +135,15 @@ function ScanView() {
                     onClick={handleStop}
                     disabled={!running}
                 >
-                    Stop
+                    {t('scan.stopButton')}
                 </button>
             </div>
 
             <div className="mt-4 flex items-center gap-2 text-sm">
-                <span className="text-slate-400">Status:</span>
+                <span className="text-slate-400">{t('scan.status')}</span>
                 <StatusBadge status={status} />
                 <span className="text-slate-500">
-                    {assets.length} asset{assets.length === 1 ? '' : 's'} found
+                    {assets.length} {t(pluralKey('scan.assetsFound', assets.length))}
                 </span>
             </div>
 
@@ -150,26 +153,26 @@ function ScanView() {
                 </div>
             )}
 
-            <div className="mt-6 overflow-hidden rounded-md border border-slate-800">
+            <div className="mt-6 overflow-hidden rounded-md border border-blue-900/40 bg-slate-900/20 backdrop-blur-md">
                 <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-900 text-slate-400">
+                    <thead className="bg-slate-900/60 text-slate-400">
                         <tr>
-                            <th className="px-3 py-2 font-medium">Kind</th>
-                            <th className="px-3 py-2 font-medium">Key</th>
-                            <th className="px-3 py-2 font-medium">Detail</th>
+                            <th className="px-3 py-2 font-medium">{t('scan.colKind')}</th>
+                            <th className="px-3 py-2 font-medium">{t('scan.colKey')}</th>
+                            <th className="px-3 py-2 font-medium">{t('scan.colDetail')}</th>
                         </tr>
                     </thead>
                     <tbody>
                         {assets.length === 0 && (
                             <tr>
                                 <td colSpan={3} className="px-3 py-6 text-center text-slate-500">
-                                    No results yet.
+                                    {t('scan.noResults')}
                                 </td>
                             </tr>
                         )}
                         {assets.map((a, i) => (
-                            <tr key={`${a.kind}-${a.key}-${i}`} className="border-t border-slate-800">
-                                <td className="px-3 py-2 text-emerald-400">{a.kind}</td>
+                            <tr key={`${a.kind}-${a.key}-${i}`} className="border-t border-blue-900/30">
+                                <td className="px-3 py-2 text-blue-400">{a.kind}</td>
                                 <td className="px-3 py-2 font-mono">{a.key}</td>
                                 <td className="px-3 py-2 text-slate-400">{assetDetail(a)}</td>
                             </tr>

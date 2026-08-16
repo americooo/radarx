@@ -40,7 +40,7 @@ type App struct {
 	schedMu     sync.Mutex
 	schedCancel context.CancelFunc
 
-	st store.Store // nil if the store failed to open (methods below check this)
+	st *store.SQLiteStore // nil if the store failed to open (methods below check this)
 }
 
 // NewApp creates a new App application struct.
@@ -58,18 +58,8 @@ func storePath() (string, error) {
 	return filepath.Join(home, ".radarx", "radarx.db"), nil
 }
 
-// scopePath returns ~/.radarx/scope.txt — must stay identical to
-// cmd/radarx/main.go's scopePath() so both share one scope file.
-func scopePath() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		home = "."
-	}
-	return filepath.Join(home, ".radarx", "scope.txt"), nil
-}
-
 // openAppStore opens the shared SQLite store at storePath().
-func openAppStore() (store.Store, error) {
+func openAppStore() (*store.SQLiteStore, error) {
 	p, err := storePath()
 	if err != nil {
 		return nil, err
@@ -104,20 +94,24 @@ type scanDoneEvent struct {
 // terminates with a single "scan:done" event.
 //
 // Before anything touches the network, root must pass the same scope gate
-// the CLI enforces (internal/scope.CheckPath) — this is the one safety rule
-// the GUI is never allowed to bypass.
+// the CLI enforces — this is the one safety rule the GUI is never allowed to
+// bypass.
 func (a *App) StartScan(root string) error {
 	root = strings.ToLower(strings.TrimSpace(root))
 	if root == "" {
 		return errors.New("target is required")
 	}
 
-	sp, err := scopePath()
-	if err != nil {
-		return err
+	var roots []string
+	if a.st != nil {
+		r, err := a.st.ListScopeRoots()
+		if err != nil {
+			return err
+		}
+		roots = r
 	}
-	if err := scope.CheckPath(sp, root); err != nil {
-		return fmt.Errorf("scope violation: %w", err)
+	if !scope.New(roots).Allows(root) {
+		return fmt.Errorf("scope violation: %s is outside the authorized scope", root)
 	}
 
 	a.mu.Lock()
@@ -209,12 +203,8 @@ func (a *App) StartMonitoring() error {
 		return errors.New("monitoring is already running")
 	}
 
-	sp, err := scopePath()
-	if err != nil {
-		return err
-	}
-
-	sched := scheduler.New(a.st, notify.Default(), scheduler.Options{ScopePath: sp})
+	token, chatID, _ := notify.ResolveCredentials(a.st)
+	sched := scheduler.New(a.st, notify.Default(token, chatID), scheduler.Options{})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	a.schedCancel = cancel
@@ -327,18 +317,11 @@ func (a *App) AddTarget(root, label string, intervalMinutes int) error {
 		return errors.New("root domain is required")
 	}
 
-	sp, err := scopePath()
+	roots, err := a.st.ListScopeRoots()
 	if err != nil {
 		return err
 	}
-	if _, statErr := os.Stat(sp); os.IsNotExist(statErr) {
-		return fmt.Errorf("not authorized: %s is not in scope yet, call AuthorizeTarget first", root)
-	}
-	sc, err := scope.Load(sp)
-	if err != nil {
-		return fmt.Errorf("not authorized: %s is not in scope yet, call AuthorizeTarget first", root)
-	}
-	if !sc.Allows(root) {
+	if !scope.New(roots).Allows(root) {
 		return fmt.Errorf("not authorized: %s is not in scope yet, call AuthorizeTarget first", root)
 	}
 
@@ -356,56 +339,32 @@ func (a *App) AddTarget(root, label string, intervalMinutes int) error {
 // AuthorizeTarget records root as an explicitly authorized scope entry.
 // It must only be called after the operator has confirmed authorization in
 // the UI — this function itself does no confirming, it only persists the
-// decision (creating ~/.radarx/scope.txt if it doesn't exist yet, appending
-// to it otherwise), mirroring the CLI's `radarx add` scope-confirmation flow.
+// decision (idempotent — adding an already-authorized root is a no-op),
+// mirroring the CLI's `radarx add` scope-confirmation flow.
 func (a *App) AuthorizeTarget(root string) error {
 	root = strings.ToLower(strings.TrimSpace(root))
 	if root == "" {
 		return errors.New("root domain is required")
 	}
-
-	sp, err := scopePath()
-	if err != nil {
-		return err
+	if a.st == nil {
+		return errors.New("store is not available")
 	}
-
-	if _, statErr := os.Stat(sp); os.IsNotExist(statErr) {
-		if err := os.MkdirAll(filepath.Dir(sp), 0o755); err != nil {
-			return err
-		}
-		return os.WriteFile(sp, []byte(root+"\n"), 0o644)
-	}
-
-	sc, err := scope.Load(sp)
-	if err == nil && sc.Allows(root) {
-		return nil // already authorized, nothing to do
-	}
-
-	f, err := os.OpenFile(sp, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	_, err = f.WriteString(root + "\n")
-	return err
+	return a.st.AddScopeRoot(root)
 }
 
 // GetScopeRoots returns the operator's currently authorized root domains.
-// A missing scope file is not an error — it returns an empty slice so the
-// Settings screen can render a "nothing configured yet" state.
+// No store (or nothing configured yet) is not an error — it returns an
+// empty slice so the Settings screen can render a "nothing configured yet"
+// state.
 func (a *App) GetScopeRoots() ([]string, error) {
-	sp, err := scopePath()
-	if err != nil {
-		return nil, err
-	}
-	if _, statErr := os.Stat(sp); os.IsNotExist(statErr) {
+	if a.st == nil {
 		return []string{}, nil
 	}
-	sc, err := scope.Load(sp)
+	roots, err := a.st.ListScopeRoots()
 	if err != nil {
 		return []string{}, nil
 	}
-	return sc.Roots(), nil
+	return roots, nil
 }
 
 // GetLatestSnapshot returns the most recent snapshot for a target. If the
@@ -458,14 +417,15 @@ func (a *App) GetDiff(targetID string) (model.DiffResult, error) {
 }
 
 // GetTelegramStatus reports whether Telegram notifications are configured,
-// via either environment variables or the local config saved below (see
-// notify.Credentials — both sources are checked, env taking priority).
+// via either environment variables or the SQLite settings table saved below
+// (see notify.ResolveCredentials — both sources are checked, env taking
+// priority).
 func (a *App) GetTelegramStatus() bool {
-	_, _, ok := notify.Credentials()
+	_, _, ok := notify.ResolveCredentials(a.st)
 	return ok
 }
 
-// SaveTelegramToken persists the bot token to ~/.radarx/config.json (0600),
+// SaveTelegramToken persists the bot token to the SQLite settings table,
 // keeping any previously saved chat id. The token never round-trips back to
 // the frontend — write-only from the UI's perspective.
 func (a *App) SaveTelegramToken(token string) error {
@@ -473,12 +433,10 @@ func (a *App) SaveTelegramToken(token string) error {
 	if token == "" {
 		return errors.New("bot token is required")
 	}
-	cfg, err := notify.LoadConfig()
-	if err != nil {
-		return err
+	if a.st == nil {
+		return errors.New("store is not available")
 	}
-	cfg.TelegramToken = token
-	return notify.SaveConfig(cfg)
+	return a.st.SetSetting("telegram_token", token)
 }
 
 // SaveTelegramChatID persists a chat id entered directly by the operator —
@@ -491,12 +449,10 @@ func (a *App) SaveTelegramChatID(chatID string) error {
 	if chatID == "" {
 		return errors.New("chat id is required")
 	}
-	cfg, err := notify.LoadConfig()
-	if err != nil {
-		return err
+	if a.st == nil {
+		return errors.New("store is not available")
 	}
-	cfg.TelegramChatID = chatID
-	return notify.SaveConfig(cfg)
+	return a.st.SetSetting("telegram_chat_id", chatID)
 }
 
 // DetectTelegramChatID uses the token already saved via SaveTelegramToken to
@@ -504,34 +460,36 @@ func (a *App) SaveTelegramChatID(chatID string) error {
 // the result as the chat id alerts will be sent to. Returns the detected
 // chat id so the UI can show it back for confirmation.
 func (a *App) DetectTelegramChatID() (string, error) {
-	cfg, err := notify.LoadConfig()
+	if a.st == nil {
+		return "", errors.New("store is not available")
+	}
+	token, _, err := a.st.GetSetting("telegram_token")
 	if err != nil {
 		return "", err
 	}
-	if cfg.TelegramToken == "" {
+	if token == "" {
 		return "", errors.New("save a bot token first")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	chatID, err := notify.DetectChatID(ctx, cfg.TelegramToken)
+	chatID, err := notify.DetectChatID(ctx, token)
 	if err != nil {
 		return "", err
 	}
 
-	cfg.TelegramChatID = chatID
-	if err := notify.SaveConfig(cfg); err != nil {
+	if err := a.st.SetSetting("telegram_chat_id", chatID); err != nil {
 		return "", err
 	}
 	return chatID, nil
 }
 
 // SendTelegramTest sends a test message using whatever credentials are
-// currently resolved (env vars or local config), so the operator can
-// confirm alerts actually reach them before relying on continuous
-// monitoring.
+// currently resolved (env vars or the SQLite settings table), so the
+// operator can confirm alerts actually reach them before relying on
+// continuous monitoring.
 func (a *App) SendTelegramTest() error {
-	token, chatID, ok := notify.Credentials()
+	token, chatID, ok := notify.ResolveCredentials(a.st)
 	if !ok {
 		return errors.New("no Telegram credentials configured yet")
 	}

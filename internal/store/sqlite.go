@@ -6,11 +6,13 @@
 package store
 
 import (
+	"bufio"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -61,6 +63,15 @@ CREATE TABLE IF NOT EXISTS assets (
 );
 
 CREATE INDEX IF NOT EXISTS idx_assets_scan ON assets(scan_id);
+
+CREATE TABLE IF NOT EXISTS scope (
+	root TEXT PRIMARY KEY
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+	key   TEXT PRIMARY KEY,
+	value TEXT NOT NULL
+);
 `
 
 // NewSQLiteStore opens (creating if needed) a SQLite database at path,
@@ -89,7 +100,16 @@ func NewSQLiteStore(path string) (*SQLiteStore, error) {
 
 	s := &SQLiteStore{db: db}
 
-	if err := s.migrateFromJSONIfEmpty(filepath.Dir(path)); err != nil {
+	dir := filepath.Dir(path)
+	if err := s.migrateFromJSONIfEmpty(dir); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := s.migrateScopeFileIfEmpty(dir); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := s.migrateConfigFileIfEmpty(dir); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -148,6 +168,147 @@ func (s *SQLiteStore) migrateFromJSONIfEmpty(root string) error {
 		}
 	}
 	return nil
+}
+
+// migrateScopeFileIfEmpty performs a one-time import of the legacy
+// <dir>/scope.txt file into the scope table, but only when the scope table
+// is currently empty and the file is present. One root domain per line;
+// blank lines and lines starting with '#' are ignored, matching the old
+// internal/scope.Load format. The file itself is left on disk untouched.
+func (s *SQLiteStore) migrateScopeFileIfEmpty(dir string) error {
+	hasScope, err := s.HasScope()
+	if err != nil {
+		return err
+	}
+	if hasScope {
+		return nil
+	}
+
+	path := filepath.Join(dir, "scope.txt")
+	f, err := os.Open(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	scan := bufio.NewScanner(f)
+	for scan.Scan() {
+		line := strings.TrimSpace(scan.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if err := s.AddScopeRoot(strings.ToLower(line)); err != nil {
+			return fmt.Errorf("migrate scope root %q: %w", line, err)
+		}
+	}
+	return scan.Err()
+}
+
+// legacyNotifyConfig mirrors the old internal/notify.Config JSON shape, kept
+// here (rather than importing internal/notify) so store has no dependency on
+// notify — the import direction is notify -> store, never the reverse.
+type legacyNotifyConfig struct {
+	TelegramToken  string `json:"telegram_token,omitempty"`
+	TelegramChatID string `json:"telegram_chat_id,omitempty"`
+}
+
+// migrateConfigFileIfEmpty performs a one-time import of the legacy
+// <dir>/config.json Telegram credentials into the settings table, but only
+// when no telegram_token setting exists yet and the file is present. The
+// file itself is left on disk untouched.
+func (s *SQLiteStore) migrateConfigFileIfEmpty(dir string) error {
+	if _, ok, err := s.GetSetting("telegram_token"); err != nil {
+		return err
+	} else if ok {
+		return nil
+	}
+
+	path := filepath.Join(dir, "config.json")
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	var cfg legacyNotifyConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return fmt.Errorf("migrate config.json: %w", err)
+	}
+	if cfg.TelegramToken != "" {
+		if err := s.SetSetting("telegram_token", cfg.TelegramToken); err != nil {
+			return err
+		}
+	}
+	if cfg.TelegramChatID != "" {
+		if err := s.SetSetting("telegram_chat_id", cfg.TelegramChatID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ListScopeRoots returns every authorized root domain, alphabetically. Never
+// nil — callers can range over it directly.
+func (s *SQLiteStore) ListScopeRoots() ([]string, error) {
+	rows, err := s.db.Query(`SELECT root FROM scope ORDER BY root ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	roots := []string{}
+	for rows.Next() {
+		var r string
+		if err := rows.Scan(&r); err != nil {
+			return nil, err
+		}
+		roots = append(roots, r)
+	}
+	return roots, rows.Err()
+}
+
+// AddScopeRoot records root as authorized. Idempotent — adding an
+// already-present root is a no-op, not an error.
+func (s *SQLiteStore) AddScopeRoot(root string) error {
+	_, err := s.db.Exec(`INSERT OR IGNORE INTO scope (root) VALUES (?)`, root)
+	return err
+}
+
+// HasScope reports whether any scope root has been configured yet.
+func (s *SQLiteStore) HasScope() (bool, error) {
+	var exists int
+	err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM scope)`).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+	return exists != 0, nil
+}
+
+// GetSetting looks up a single key/value setting (e.g. Telegram
+// credentials). ok is false if the key hasn't been set.
+func (s *SQLiteStore) GetSetting(key string) (value string, ok bool, err error) {
+	err = s.db.QueryRow(`SELECT value FROM settings WHERE key = ?`, key).Scan(&value)
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return value, true, nil
+}
+
+// SetSetting upserts a single key/value setting.
+func (s *SQLiteStore) SetSetting(key, value string) error {
+	_, err := s.db.Exec(`
+		INSERT INTO settings (key, value) VALUES (?, ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value
+	`, key, value)
+	return err
 }
 
 func (s *SQLiteStore) SaveTarget(t model.Target) error {

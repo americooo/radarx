@@ -3,12 +3,7 @@
 // a target outside scope must be refused, not silently skipped.
 package scope
 
-import (
-	"bufio"
-	"fmt"
-	"os"
-	"strings"
-)
+import "strings"
 
 // Scope is a set of authorized root domains. A host is in scope if it equals
 // a root exactly or is a subdomain of one (e.g. root "example.com" covers
@@ -17,35 +12,9 @@ type Scope struct {
 	roots []string
 }
 
-// Load reads a scope file: one root domain per line, blank lines and lines
-// starting with '#' are ignored. Domains are lowercased and trimmed.
-func Load(path string) (*Scope, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("scope: open %s: %w", path, err)
-	}
-	defer f.Close()
-
-	var roots []string
-	scan := bufio.NewScanner(f)
-	for scan.Scan() {
-		line := strings.TrimSpace(scan.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		roots = append(roots, strings.ToLower(line))
-	}
-	if err := scan.Err(); err != nil {
-		return nil, fmt.Errorf("scope: read %s: %w", path, err)
-	}
-	if len(roots) == 0 {
-		return nil, fmt.Errorf("scope: %s has no scope entries", path)
-	}
-	return &Scope{roots: roots}, nil
-}
-
-// New builds a Scope directly from a list of root domains (e.g. for tests or
-// programmatic construction), applying the same normalization as Load.
+// New builds a Scope from a list of root domains (typically loaded from the
+// store's scope table, see store.SQLiteStore.ListScopeRoots), normalizing
+// each entry (lowercased, trimmed).
 func New(roots []string) *Scope {
 	s := &Scope{}
 	for _, r := range roots {
@@ -74,21 +43,4 @@ func (s *Scope) Roots() []string {
 	out := make([]string, len(s.roots))
 	copy(out, s.roots)
 	return out
-}
-
-// CheckPath loads the scope file at path and reports whether root is
-// authorized. It returns an error if the scope file can't be loaded (e.g.
-// missing or empty — scope not configured yet) or if root isn't covered by
-// any entry in it. Callers (CLI, scheduler) use this as the single gate
-// before ever scanning a target, so scope enforcement can't drift between
-// call sites.
-func CheckPath(path, root string) error {
-	sc, err := Load(path)
-	if err != nil {
-		return fmt.Errorf("scope not configured: %w", err)
-	}
-	if !sc.Allows(root) {
-		return fmt.Errorf("%s is outside the authorized scope (%s)", root, path)
-	}
-	return nil
 }

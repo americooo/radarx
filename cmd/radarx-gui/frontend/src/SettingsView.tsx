@@ -11,8 +11,11 @@ import {
     StartMonitoring,
     StopMonitoring,
 } from '../wailsjs/go/main/App';
+import {useI18n} from './i18n/LanguageContext';
+import {Language} from './i18n/storage';
 
 function SettingsView() {
+    const {language, setLanguage, t} = useI18n();
     const [roots, setRoots] = useState<string[]>([]);
     const [loading, setLoading] = useState(true);
     const [loadErr, setLoadErr] = useState('');
@@ -75,7 +78,7 @@ function SettingsView() {
         try {
             await SaveTelegramToken(tok);
             setTgToken('');
-            setTgMsg('Token saqlandi. Endi botga Telegramda bitta xabar yozing (masalan /start), keyin "Chat ID aniqlash" tugmasini bosing.');
+            setTgMsg(t('settings.telegram.tokenSaved'));
             refreshTelegramStatus();
         } catch (err) {
             setTgErr(String(err));
@@ -90,7 +93,7 @@ function SettingsView() {
         setTgErr('');
         try {
             const chatID = await DetectTelegramChatID();
-            setTgMsg(`Chat ID aniqlandi va saqlandi: ${chatID}. Endi "Test xabar yuborish" bilan tekshiring.`);
+            setTgMsg(t('settings.telegram.chatIdDetected', {chatID}));
             refreshTelegramStatus();
         } catch (err) {
             setTgErr(String(err));
@@ -108,7 +111,7 @@ function SettingsView() {
         try {
             await SaveTelegramChatID(id);
             setTgManualChatID('');
-            setTgMsg(`Chat ID saqlandi: ${id}. Endi "Test xabar yuborish" bilan tekshiring.`);
+            setTgMsg(t('settings.telegram.chatIdSaved', {id}));
             refreshTelegramStatus();
         } catch (err) {
             setTgErr(String(err));
@@ -123,7 +126,7 @@ function SettingsView() {
         setTgErr('');
         try {
             await SendTelegramTest();
-            setTgMsg('Test xabar yuborildi — Telegramni tekshiring.');
+            setTgMsg(t('settings.telegram.testSent'));
         } catch (err) {
             setTgErr(String(err));
         } finally {
@@ -164,35 +167,66 @@ function SettingsView() {
         }
     }
 
+    function handleSelectLanguage(lang: Language) {
+        setLanguage(lang);
+    }
+
     return (
         <div>
-            <h1 className="text-2xl font-bold tracking-tight text-emerald-400">Settings</h1>
-            <p className="mt-1 text-sm text-slate-400">Scope and notification configuration.</p>
+            <h1 className="text-2xl font-bold tracking-tight text-blue-400">{t('settings.title')}</h1>
+            <p className="mt-1 text-sm text-slate-400">{t('settings.subtitle')}</p>
 
-            <div className="mt-6 rounded-md border border-slate-800 bg-slate-900/50 p-4">
-                <h2 className="text-sm font-semibold text-slate-300">Authorized Scope</h2>
+            <div className="mt-6 rounded-md border border-blue-900/40 bg-slate-900/40 p-4 backdrop-blur-md">
+                <h2 className="text-sm font-semibold text-slate-300">{t('settings.language.title')}</h2>
+                <p className="mt-1 text-xs text-slate-500">{t('settings.language.description')}</p>
+
+                <div className="mt-3 flex gap-3">
+                    <button
+                        className={`rounded-md border px-4 py-2 text-sm font-medium transition-colors ${
+                            language === 'uz'
+                                ? 'border-blue-500 bg-blue-900/50 text-blue-300'
+                                : 'border-blue-900/40 bg-slate-900/40 text-slate-300 hover:border-blue-700/60'
+                        }`}
+                        onClick={() => handleSelectLanguage('uz')}
+                    >
+                        {t('onboarding.lang.uz')}
+                    </button>
+                    <button
+                        className={`rounded-md border px-4 py-2 text-sm font-medium transition-colors ${
+                            language === 'en'
+                                ? 'border-blue-500 bg-blue-900/50 text-blue-300'
+                                : 'border-blue-900/40 bg-slate-900/40 text-slate-300 hover:border-blue-700/60'
+                        }`}
+                        onClick={() => handleSelectLanguage('en')}
+                    >
+                        {t('onboarding.lang.en')}
+                    </button>
+                </div>
+            </div>
+
+            <div className="mt-6 rounded-md border border-blue-900/40 bg-slate-900/40 p-4 backdrop-blur-md">
+                <h2 className="text-sm font-semibold text-slate-300">{t('settings.scope.title')}</h2>
                 <p className="mt-1 text-xs text-slate-500">
-                    Root domains RadarX is allowed to scan. A scan is refused before any network
-                    request is made unless its target is covered here.
+                    {t('settings.scope.description')}
                 </p>
 
                 <div className="mt-3 flex gap-3">
                     <input
-                        className="flex-1 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm
-                                   placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none"
+                        className="flex-1 rounded-md border border-blue-900/40 bg-slate-900/40 px-3 py-2 text-sm backdrop-blur-md
+                                   placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
                         type="text"
-                        placeholder="add domain to scope, e.g. example.com"
+                        placeholder={t('settings.scope.placeholder')}
                         value={newDomain}
                         onChange={(e) => setNewDomain(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleAddDomain()}
                     />
                     <button
-                        className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white
-                                   hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
+                        className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white
+                                   hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
                         onClick={handleAddDomain}
                         disabled={adding || !newDomain.trim()}
                     >
-                        Add to scope
+                        {t('settings.scope.addButton')}
                     </button>
                 </div>
 
@@ -208,10 +242,10 @@ function SettingsView() {
                 )}
 
                 <div className="mt-4">
-                    {loading && <p className="text-sm text-slate-500">Loading...</p>}
+                    {loading && <p className="text-sm text-slate-500">{t('settings.scope.loading')}</p>}
                     {!loading && roots.length === 0 && (
                         <p className="text-sm text-slate-500">
-                            Hali hech narsa yo'q — scope bo'sh. Yuqoridagi input orqali domen qo'shing.
+                            {t('settings.scope.empty')}
                         </p>
                     )}
                     {!loading && roots.length > 0 && (
@@ -219,7 +253,7 @@ function SettingsView() {
                             {roots.map((r) => (
                                 <li
                                     key={r}
-                                    className="rounded-md border border-slate-800 bg-slate-900 px-3 py-1.5 font-mono text-sm text-emerald-400"
+                                    className="rounded-md border border-blue-900/40 bg-slate-900/40 px-3 py-1.5 font-mono text-sm text-blue-400 backdrop-blur-md"
                                 >
                                     {r}
                                 </li>
@@ -229,31 +263,30 @@ function SettingsView() {
                 </div>
             </div>
 
-            <div className="mt-6 rounded-md border border-slate-800 bg-slate-900/50 p-4">
-                <h2 className="text-sm font-semibold text-slate-300">Continuous Monitoring</h2>
+            <div className="mt-6 rounded-md border border-blue-900/40 bg-slate-900/40 p-4 backdrop-blur-md">
+                <h2 className="text-sm font-semibold text-slate-300">{t('settings.monitoring.title')}</h2>
                 <p className="mt-1 text-xs text-slate-500">
-                    Periodically rescans every enabled target on its interval, diffs against the
-                    last snapshot, and notifies you (desktop{tgEnabled ? ' + Telegram' : ''}) when
-                    something changes. Closing the window while this is on keeps it running in the
-                    background instead of quitting.
+                    {t('settings.monitoring.description', {
+                        tgSuffix: tgEnabled ? t('settings.monitoring.tgSuffix') : '',
+                    })}
                 </p>
 
                 <div className="mt-3 flex items-center gap-3">
                     <span
                         className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                            monitoring ? 'bg-emerald-900 text-emerald-300' : 'bg-slate-800 text-slate-400'
+                            monitoring ? 'bg-blue-900 text-blue-300' : 'bg-slate-800 text-slate-400'
                         }`}
                     >
-                        {monitoring ? 'running' : 'stopped'}
+                        {monitoring ? t('settings.monitoring.running') : t('settings.monitoring.stopped')}
                     </span>
                     <button
                         className={`rounded-md px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40 ${
-                            monitoring ? 'bg-red-700 hover:bg-red-600' : 'bg-emerald-600 hover:bg-emerald-500'
+                            monitoring ? 'bg-red-700 hover:bg-red-600' : 'bg-blue-600 hover:bg-blue-500'
                         }`}
                         onClick={toggleMonitoring}
                         disabled={monLoading}
                     >
-                        {monitoring ? 'Stop monitoring' : 'Start monitoring'}
+                        {monitoring ? t('settings.monitoring.stopButton') : t('settings.monitoring.startButton')}
                     </button>
                 </div>
 
@@ -264,97 +297,91 @@ function SettingsView() {
                 )}
             </div>
 
-            <div className="mt-6 rounded-md border border-slate-800 bg-slate-900/50 p-4">
-                <h2 className="text-sm font-semibold text-slate-300">Telegram Notifications</h2>
+            <div className="mt-6 rounded-md border border-blue-900/40 bg-slate-900/40 p-4 backdrop-blur-md">
+                <h2 className="text-sm font-semibold text-slate-300">{t('settings.telegram.title')}</h2>
                 <div className="mt-3 flex items-center gap-2 text-sm">
                     <span
                         className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                            tgEnabled ? 'bg-emerald-900 text-emerald-300' : 'bg-slate-800 text-slate-400'
+                            tgEnabled ? 'bg-blue-900 text-blue-300' : 'bg-slate-800 text-slate-400'
                         }`}
                     >
-                        {tgEnabled ? 'enabled' : 'disabled'}
+                        {tgEnabled ? t('settings.telegram.enabled') : t('settings.telegram.disabled')}
                     </span>
                 </div>
 
                 <ol className="mt-3 space-y-3 text-xs text-slate-500">
                     <li>
-                        1. @BotFather orqali bot yarating, tokenni shu yerga kiriting va saqlang (token
-                        faqat sizning kompyuteringizda, <span className="font-mono">~/.radarx/config.json</span> da
-                        saqlanadi — hech qayerga yuborilmaydi).
+                        {t('settings.telegram.step1')}
                         <div className="mt-2 flex gap-3">
                             <input
-                                className="flex-1 min-w-[200px] rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm
-                                           placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none"
+                                className="flex-1 min-w-[200px] rounded-md border border-blue-900/40 bg-slate-900/40 px-3 py-2 text-sm backdrop-blur-md
+                                           placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
                                 type="password"
-                                placeholder="bot token"
+                                placeholder={t('settings.telegram.tokenPlaceholder')}
                                 value={tgToken}
                                 onChange={(e) => setTgToken(e.target.value)}
                             />
                             <button
-                                className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white
-                                           hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
+                                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white
+                                           hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
                                 onClick={handleSaveToken}
                                 disabled={tgSaving || !tgToken.trim()}
                             >
-                                {tgSaving ? 'Saving...' : 'Save token'}
+                                {tgSaving ? t('settings.telegram.saving') : t('settings.telegram.saveToken')}
                             </button>
                         </div>
                     </li>
                     <li>
-                        2. Telegramda o'z botingizga bitta xabar yozing (masalan{' '}
-                        <span className="font-mono">/start</span>), keyin bosing — faqat shu botga yozgan odam
-                        xabarnoma oladi:
+                        {t('settings.telegram.step2')}
                         <div className="mt-2">
                             <button
-                                className="rounded-md border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-medium
-                                           text-emerald-400 hover:border-emerald-600 disabled:cursor-not-allowed disabled:opacity-40"
+                                className="rounded-md border border-blue-900/40 bg-slate-900/40 px-4 py-2 text-sm font-medium
+                                           text-blue-400 backdrop-blur-md hover:border-blue-600 disabled:cursor-not-allowed disabled:opacity-40"
                                 onClick={handleDetectChatID}
                                 disabled={tgDetecting}
                             >
-                                {tgDetecting ? 'Detecting...' : 'Chat ID aniqlash'}
+                                {tgDetecting ? t('settings.telegram.detecting') : t('settings.telegram.detectButton')}
                             </button>
                         </div>
                         <div className="mt-3">
-                            Ishlamasa (masalan Telegram eski xabarni topolmasa) — chat ID'ni qo'lda kiriting.
-                            Uni bilish uchun Telegram'da <span className="font-mono">@userinfobot</span> ga
-                            yozing, u darhol raqamli ID'ingizni qaytaradi:
+                            {t('settings.telegram.manualHelp')}
                             <div className="mt-2 flex gap-3">
                                 <input
-                                    className="flex-1 min-w-[160px] rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm
-                                               placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none"
+                                    className="flex-1 min-w-[160px] rounded-md border border-blue-900/40 bg-slate-900/40 px-3 py-2 text-sm backdrop-blur-md
+                                               placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
                                     type="text"
-                                    placeholder="chat id, masalan 123456789"
+                                    placeholder={t('settings.telegram.chatIdPlaceholder')}
                                     value={tgManualChatID}
                                     onChange={(e) => setTgManualChatID(e.target.value)}
                                 />
                                 <button
-                                    className="rounded-md border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-medium
-                                               text-emerald-400 hover:border-emerald-600 disabled:cursor-not-allowed disabled:opacity-40"
+                                    className="rounded-md border border-blue-900/40 bg-slate-900/40 px-4 py-2 text-sm font-medium
+                                               text-blue-400 backdrop-blur-md hover:border-blue-600 disabled:cursor-not-allowed disabled:opacity-40"
                                     onClick={handleSaveChatIDManually}
                                     disabled={tgSavingChatID || !tgManualChatID.trim()}
                                 >
-                                    {tgSavingChatID ? 'Saving...' : 'Chat ID saqlash'}
+                                    {tgSavingChatID ? t('settings.telegram.saving') : t('settings.telegram.saveChatId')}
                                 </button>
                             </div>
                         </div>
                     </li>
                     <li>
-                        3. Tekshiring:
+                        {t('settings.telegram.step3')}
                         <div className="mt-2">
                             <button
-                                className="rounded-md border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-medium
-                                           text-emerald-400 hover:border-emerald-600 disabled:cursor-not-allowed disabled:opacity-40"
+                                className="rounded-md border border-blue-900/40 bg-slate-900/40 px-4 py-2 text-sm font-medium
+                                           text-blue-400 backdrop-blur-md hover:border-blue-600 disabled:cursor-not-allowed disabled:opacity-40"
                                 onClick={handleSendTest}
                                 disabled={tgTesting}
                             >
-                                {tgTesting ? 'Sending...' : 'Test xabar yuborish'}
+                                {tgTesting ? t('settings.telegram.testing') : t('settings.telegram.testButton')}
                             </button>
                         </div>
                     </li>
                 </ol>
 
                 {tgMsg && (
-                    <div className="mt-3 rounded-md border border-emerald-800 bg-emerald-950/50 px-3 py-2 text-sm text-emerald-300">
+                    <div className="mt-3 rounded-md border border-blue-800 bg-blue-950/50 px-3 py-2 text-sm text-blue-300">
                         {tgMsg}
                     </div>
                 )}
@@ -365,8 +392,7 @@ function SettingsView() {
                 )}
 
                 <p className="mt-3 text-xs text-slate-500">
-                    Muqobil: RADARX_TG_TOKEN / RADARX_TG_CHAT_ID environment variable'lar orqali ham sozlash mumkin
-                    (ular saqlangan konfiguratsiyadan ustuvor).
+                    {t('settings.telegram.envHint')}
                 </p>
             </div>
         </div>

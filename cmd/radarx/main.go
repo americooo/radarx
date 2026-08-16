@@ -68,14 +68,14 @@ func main() {
 	case "history":
 		cmdHistory(st, os.Args[2:])
 	case "test-telegram":
-		cmdTestTelegram()
+		cmdTestTelegram(st)
 	default:
 		usage()
 		os.Exit(2)
 	}
 }
 
-func openStore() (store.Store, error) {
+func openStore() (*store.SQLiteStore, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		home = "."
@@ -83,21 +83,15 @@ func openStore() (store.Store, error) {
 	return store.NewSQLiteStore(filepath.Join(home, ".radarx", "radarx.db"))
 }
 
-// scopePath returns the path to the operator's scope file, ~/.radarx/scope.txt.
-// This lives alongside the store's own ~/.radarx directory.
-func scopePath() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		home = "."
-	}
-	return filepath.Join(home, ".radarx", "scope.txt"), nil
-}
-
 // checkInScope is the single gate a scan must pass before it's allowed to
-// touch the network: the scope file must exist and root must be covered by
-// it. It's kept separate from cmdScan so it can be unit tested directly.
-func checkInScope(path, root string) error {
-	return scope.CheckPath(path, root)
+// touch the network: root must be covered by one of roots. It's kept
+// separate from cmdScan (and free of any store/DB dependency) so it can be
+// unit tested directly.
+func checkInScope(roots []string, root string) error {
+	if !scope.New(roots).Allows(root) {
+		return fmt.Errorf("%s is outside the authorized scope", root)
+	}
+	return nil
 }
 
 // confirmScope asks the operator to explicitly authorize scanning root. It
@@ -110,7 +104,7 @@ func confirmScope(root string) bool {
 	return line == "y" || line == "yes"
 }
 
-func cmdAdd(st store.Store, args []string) {
+func cmdAdd(st *store.SQLiteStore, args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "usage: radarx add <root-domain> [--label ..] [--interval ..]")
 		os.Exit(2)
@@ -125,31 +119,22 @@ func cmdAdd(st store.Store, args []string) {
 	interval := fs.Int("interval", 60, "scan interval in minutes")
 	_ = fs.Parse(args[1:])
 
-	sp, err := scopePath()
+	roots, err := st.ListScopeRoots()
 	must(err)
 
-	if _, statErr := os.Stat(sp); os.IsNotExist(statErr) {
+	if len(roots) == 0 {
 		if !confirmScope(root) {
 			fmt.Println("bekor qilindi: scope tasdiqlanmadi, hech narsa saqlanmadi.")
 			return
 		}
-		must(os.MkdirAll(filepath.Dir(sp), 0o755))
-		must(os.WriteFile(sp, []byte(root+"\n"), 0o644))
-	} else {
-		sc, loadErr := scope.Load(sp)
-		must(loadErr)
-		if !sc.Allows(root) {
-			fmt.Printf("%s joriy scope'da yo'q.\n", root)
-			if !confirmScope(root) {
-				fmt.Println("bekor qilindi: scope tasdiqlanmadi, hech narsa saqlanmadi.")
-				return
-			}
-			f, openErr := os.OpenFile(sp, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o644)
-			must(openErr)
-			_, writeErr := f.WriteString(root + "\n")
-			must(writeErr)
-			must(f.Close())
+		must(st.AddScopeRoot(root))
+	} else if !scope.New(roots).Allows(root) {
+		fmt.Printf("%s joriy scope'da yo'q.\n", root)
+		if !confirmScope(root) {
+			fmt.Println("bekor qilindi: scope tasdiqlanmadi, hech narsa saqlanmadi.")
+			return
 		}
+		must(st.AddScopeRoot(root))
 	}
 
 	t := model.Target{
@@ -164,7 +149,7 @@ func cmdAdd(st store.Store, args []string) {
 	fmt.Printf("added target %s (id=%s, interval=%dm)\n", t.Root, t.ID, t.IntervalM)
 }
 
-func cmdScan(st store.Store, args []string) {
+func cmdScan(st *store.SQLiteStore, args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "usage: radarx scan <root-domain> [--ct]")
 		os.Exit(2)
@@ -191,13 +176,13 @@ func cmdScan(st store.Store, args []string) {
 		t = model.Target{ID: id, Root: root, Enabled: true, IntervalM: 60, AddedAt: time.Now().UTC()}
 	}
 
-	sp, err := scopePath()
+	roots, err := st.ListScopeRoots()
 	must(err)
-	if _, statErr := os.Stat(sp); os.IsNotExist(statErr) {
+	if len(roots) == 0 {
 		fmt.Fprintf(os.Stderr, "scope hali sozlanmagan, avval `radarx add %s` orqali scope'ga qo'shing\n", t.Root)
 		return
 	}
-	if err := checkInScope(sp, t.Root); err != nil {
+	if err := checkInScope(roots, t.Root); err != nil {
 		fmt.Fprintf(os.Stderr, "SCOPE VIOLATION: %s scope tashqarisida, scan qilinmaydi (%v)\n", t.Root, err)
 		return
 	}
@@ -245,7 +230,7 @@ func cmdList(st store.Store) {
 }
 
 // cmdWatch runs the background scheduler until interrupted (Ctrl+C).
-func cmdWatch(st store.Store, args []string) {
+func cmdWatch(st *store.SQLiteStore, args []string) {
 	fs := flag.NewFlagSet("watch", flag.ExitOnError)
 	workers := fs.Int("workers", 40, "subdomain resolution concurrency")
 	minPeriod := fs.Duration("min-period", 5*time.Minute, "minimum time between scans of any target")
@@ -257,7 +242,8 @@ func cmdWatch(st store.Store, args []string) {
 	} else {
 		fmt.Println("telegram notifications: disabled (set RADARX_TG_TOKEN and RADARX_TG_CHAT_ID)")
 	}
-	n := notify.Default()
+	token, chatID, _ := notify.ResolveCredentials(st)
+	n := notify.Default(token, chatID)
 	sch := scheduler.New(st, n, scheduler.Options{
 		Workers:   *workers,
 		MinPeriod: *minPeriod,
@@ -382,8 +368,8 @@ func cmdHistory(st store.Store, args []string) {
 
 // cmdTestTelegram sends a test message so the operator can confirm their
 // bot token and chat id are correct before relying on alerts.
-func cmdTestTelegram() {
-	token, chatID, ok := notify.Credentials()
+func cmdTestTelegram(st *store.SQLiteStore) {
+	token, chatID, ok := notify.ResolveCredentials(st)
 	if !ok {
 		fmt.Fprintln(os.Stderr, "set RADARX_TG_TOKEN and RADARX_TG_CHAT_ID, or configure Telegram in the GUI's Settings tab, first")
 		os.Exit(2)

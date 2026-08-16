@@ -8,8 +8,6 @@ package scheduler
 import (
 	"context"
 	"log"
-	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -26,12 +24,11 @@ type Options struct {
 	Workers   int           // subdomain enum concurrency per scan
 	MinPeriod time.Duration // safety floor on how often any target may scan
 	Logger    *log.Logger
-	ScopePath string // path to the scope file; defaults to ~/.radarx/scope.txt
 }
 
 // Scheduler owns the background scan loop.
 type Scheduler struct {
-	store    store.Store
+	store    *store.SQLiteStore
 	notifier notify.Notifier
 	opts     Options
 	log      *log.Logger
@@ -41,7 +38,7 @@ type Scheduler struct {
 }
 
 // New builds a Scheduler.
-func New(st store.Store, n notify.Notifier, opts Options) *Scheduler {
+func New(st *store.SQLiteStore, n notify.Notifier, opts Options) *Scheduler {
 	if opts.Workers <= 0 {
 		opts.Workers = 40
 	}
@@ -50,11 +47,6 @@ func New(st store.Store, n notify.Notifier, opts Options) *Scheduler {
 	}
 	if opts.Logger == nil {
 		opts.Logger = log.Default()
-	}
-	if opts.ScopePath == "" {
-		if home, err := os.UserHomeDir(); err == nil {
-			opts.ScopePath = filepath.Join(home, ".radarx", "scope.txt")
-		}
 	}
 	return &Scheduler{
 		store:    st,
@@ -94,6 +86,13 @@ func (s *Scheduler) sweep(ctx context.Context) {
 		return
 	}
 
+	roots, err := s.store.ListScopeRoots()
+	if err != nil {
+		s.log.Printf("list scope roots: %v", err)
+		return
+	}
+	sc := scope.New(roots)
+
 	now := time.Now()
 	var wg sync.WaitGroup
 	for _, t := range targets {
@@ -103,8 +102,8 @@ func (s *Scheduler) sweep(ctx context.Context) {
 		if !s.due(t, now) {
 			continue
 		}
-		if err := scope.CheckPath(s.opts.ScopePath, t.Root); err != nil {
-			s.log.Printf("[%s] skipping: %v", t.Root, err)
+		if !sc.Allows(t.Root) {
+			s.log.Printf("[%s] skipping: outside authorized scope", t.Root)
 			continue
 		}
 		t := t
