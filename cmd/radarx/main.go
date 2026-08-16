@@ -139,7 +139,14 @@ func cmdScan(st store.Store, args []string) {
 
 	fmt.Printf("scanning %s ...\n", root)
 	start := time.Now()
-	snap := engine.Scan(ctx, t, engine.ScanOptions{Workers: 40, UseCertLogs: *useCT, ScanPorts: *ports})
+
+	snap := model.Snapshot{TargetID: t.ID, Root: t.Root, TakenAt: time.Now().UTC()}
+	for ev := range engine.ScanStream(ctx, t, engine.ScanOptions{Workers: 40, UseCertLogs: *useCT, ScanPorts: *ports}) {
+		if ev.Asset != nil {
+			fmt.Printf("  + %s\n", ev.Asset.Key)
+			snap.Assets = append(snap.Assets, *ev.Asset)
+		}
+	}
 	fmt.Printf("discovered %d assets in %s\n", len(snap.Assets), time.Since(start).Round(time.Millisecond))
 
 	prev, hadPrev, err := st.LatestSnapshot(id)
