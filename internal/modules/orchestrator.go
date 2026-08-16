@@ -32,6 +32,9 @@ func Run(ctx context.Context, target model.Target, newAssets, allAssets []model.
 		var wg sync.WaitGroup
 		for _, m := range All() {
 			m := m
+			if !IsEnabled(store, m.Name()) {
+				continue
+			}
 			state := NewState(store, m.Name())
 
 			if m.Trigger() == TriggerScheduled {

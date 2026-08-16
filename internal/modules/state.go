@@ -33,3 +33,30 @@ func (s *moduleState) Get(key string) (string, bool, error) {
 func (s *moduleState) Set(key, value string) error {
 	return s.store.SetSetting(s.key(key), value)
 }
+
+// enabledSettingKey is where a module's on/off toggle lives — deliberately
+// outside the "module.<name>." namespace moduleState uses for a module's own
+// data, since enablement is metadata about the module, not data produced by
+// it (and the GUI needs to read/write it without going through State).
+func enabledSettingKey(name string) string { return "module_enabled." + name }
+
+// IsEnabled reports whether module name is enabled. Absent from store means
+// enabled — modules are on by default, matching "8-9 modules, all useful"
+// from RADARX_MODULES_TASKS.md rather than requiring opt-in.
+func IsEnabled(store SettingsStore, name string) bool {
+	v, ok, err := store.GetSetting(enabledSettingKey(name))
+	if err != nil || !ok {
+		return true
+	}
+	return v != "false"
+}
+
+// SetEnabled persists module name's on/off toggle (e.g. from the GUI's
+// Settings screen).
+func SetEnabled(store SettingsStore, name string, enabled bool) error {
+	v := "true"
+	if !enabled {
+		v = "false"
+	}
+	return store.SetSetting(enabledSettingKey(name), v)
+}
