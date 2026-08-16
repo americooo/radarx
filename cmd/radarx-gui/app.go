@@ -423,6 +423,12 @@ func (a *App) GetLatestSnapshot(targetID string) (model.Snapshot, error) {
 	if !ok {
 		return model.Snapshot{}, fmt.Errorf("no snapshot yet for %s — run a scan first", targetID)
 	}
+	if snap.Assets == nil {
+		// A nil slice marshals to JSON `null`, not `[]` — the frontend does
+		// `snapshot.assets.length` and would crash on that. Never hand it a
+		// nil slice for a field it's going to iterate/measure.
+		snap.Assets = []model.Asset{}
+	}
 	return snap, nil
 }
 
@@ -441,7 +447,14 @@ func (a *App) GetDiff(targetID string) (model.DiffResult, error) {
 		return model.DiffResult{}, fmt.Errorf("not enough scan history yet for %s (need at least 2 scans)", targetID)
 	}
 	prev, latest := snaps[len(snaps)-2], snaps[len(snaps)-1]
-	return diff.Compare(prev, latest), nil
+	d := diff.Compare(prev, latest)
+	if d.Changes == nil {
+		// Same nil-slice-marshals-to-null trap as GetLatestSnapshot: a diff
+		// with no changes (the common case) must still be a JSON `[]` so
+		// result.changes.length in DiffView.tsx doesn't throw on `null`.
+		d.Changes = []model.Change{}
+	}
+	return d, nil
 }
 
 // GetTelegramStatus reports whether Telegram notifications are configured

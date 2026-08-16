@@ -306,6 +306,63 @@ func TestGetDiffTwoSnapshots(t *testing.T) {
 	}
 }
 
+// TestGetDiffNoChangesIsNeverNil guards against a real bug: a nil Go slice
+// marshals to JSON `null`, and DiffView.tsx does `result.changes.length`
+// unconditionally — a null there crashes the whole Diff tab. Two identical
+// snapshots (the common "nothing changed" case) must still yield [].
+func TestGetDiffNoChangesIsNeverNil(t *testing.T) {
+	a := testApp(t)
+
+	if err := a.st.SaveTarget(model.Target{ID: "t1", Root: "t1.com", AddedAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+
+	base := time.Now().UTC()
+	snap := model.Snapshot{
+		TargetID: "t1", Root: "t1.com", TakenAt: base,
+		Assets: []model.Asset{{Kind: model.KindSubdomain, Key: "www.t1.com", Host: "www.t1.com"}},
+	}
+	if err := a.st.SaveSnapshot(snap); err != nil {
+		t.Fatal(err)
+	}
+	snap.TakenAt = base.Add(time.Hour)
+	if err := a.st.SaveSnapshot(snap); err != nil {
+		t.Fatal(err)
+	}
+
+	d, err := a.GetDiff("t1")
+	if err != nil {
+		t.Fatalf("GetDiff: %v", err)
+	}
+	if d.Changes == nil {
+		t.Fatal("Changes must never be nil — it marshals to JSON null and crashes DiffView.tsx")
+	}
+	if len(d.Changes) != 0 {
+		t.Fatalf("expected no changes between identical snapshots, got %+v", d.Changes)
+	}
+}
+
+// TestGetLatestSnapshotEmptyAssetsIsNeverNil guards the same nil-slice trap
+// for ResultsView.tsx's snapshot.assets.length.
+func TestGetLatestSnapshotEmptyAssetsIsNeverNil(t *testing.T) {
+	a := testApp(t)
+
+	if err := a.st.SaveTarget(model.Target{ID: "t1", Root: "t1.com", AddedAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.st.SaveSnapshot(model.Snapshot{TargetID: "t1", Root: "t1.com", TakenAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+
+	snap, err := a.GetLatestSnapshot("t1")
+	if err != nil {
+		t.Fatalf("GetLatestSnapshot: %v", err)
+	}
+	if snap.Assets == nil {
+		t.Fatal("Assets must never be nil — it marshals to JSON null and crashes ResultsView.tsx")
+	}
+}
+
 func TestExportReportNoSnapshot(t *testing.T) {
 	a := testApp(t)
 	if err := a.st.SaveTarget(model.Target{ID: "t1", Root: "t1.com", AddedAt: time.Now().UTC()}); err != nil {

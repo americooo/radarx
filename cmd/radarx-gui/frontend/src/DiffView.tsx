@@ -52,7 +52,13 @@ function DiffView() {
         setDiffErr('');
         setResult(null);
         GetDiff(selected)
-            .then((d) => setResult(d))
+            .then((d) => {
+                // Go's json.Marshal renders a nil slice as `null`; a diff
+                // with no changes (the common case) would otherwise crash
+                // the length/map calls below.
+                d.changes = d.changes || [];
+                setResult(d);
+            })
             .catch((err) => setDiffErr(String(err)))
             .finally(() => setLoading(false));
     }, [selected]);

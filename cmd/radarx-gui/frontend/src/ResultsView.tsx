@@ -34,7 +34,13 @@ function ResultsView() {
         setExportMsg('');
         setExportErr('');
         GetLatestSnapshot(selected)
-            .then((snap) => setSnapshot(snap))
+            .then((snap) => {
+                // Go's json.Marshal renders a nil slice as `null`; a
+                // zero-asset snapshot would otherwise crash the
+                // .length/.map calls below.
+                snap.assets = snap.assets || [];
+                setSnapshot(snap);
+            })
             .catch((err) => setSnapErr(String(err)))
             .finally(() => setLoading(false));
     }, [selected]);
