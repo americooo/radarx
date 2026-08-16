@@ -31,7 +31,7 @@ func (f *fakeModule) Seen() []model.Asset {
 	return append([]model.Asset(nil), f.seen...)
 }
 
-func (f *fakeModule) Run(ctx context.Context, asset model.Asset) (<-chan model.Finding, error) {
+func (f *fakeModule) Run(ctx context.Context, target model.Target, asset model.Asset, state State) (<-chan model.Finding, error) {
 	f.mu.Lock()
 	f.seen = append(f.seen, asset)
 	f.mu.Unlock()

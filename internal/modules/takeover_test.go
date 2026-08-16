@@ -13,7 +13,7 @@ func drainFindings(t *testing.T, m Module, a model.Asset) []model.Finding {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	ch, err := m.Run(ctx, a)
+	ch, err := m.Run(ctx, model.Target{}, a, NewState(newFakeSettingsStore(), "test"))
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}

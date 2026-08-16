@@ -186,7 +186,7 @@ func (s *Scheduler) scanOne(ctx context.Context, t model.Target) {
 	// Run detection modules (e.g. subdomain takeover) against this cycle's
 	// assets and forward any findings to the notifier.
 	newAssets := newAssetsFrom(d)
-	for f := range modules.Run(ctx, newAssets, snap.Assets) {
+	for f := range modules.Run(ctx, t, newAssets, snap.Assets, s.store) {
 		if err := s.notifier.NotifyFinding(f); err != nil {
 			s.log.Printf("[%s] notify finding: %v", t.Root, err)
 		}

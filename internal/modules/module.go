@@ -30,6 +30,16 @@ const (
 	TriggerScheduled     Trigger = "scheduled"
 )
 
+// State lets a module remember something between runs (e.g. "the JS hash I
+// saw last time", "the CT log entries I've already reported") — scoped to
+// that one module, backed by the SQLite settings table under the hood.
+// Values are opaque strings; a module that needs structure marshals its own
+// JSON before calling Set.
+type State interface {
+	Get(key string) (value string, ok bool, err error)
+	Set(key, value string) error
+}
+
 // Module is a self-contained detection unit. internal/modules never imports
 // internal/engine — modules consume model.Asset, they don't run scans.
 type Module interface {
@@ -39,7 +49,14 @@ type Module interface {
 	// Run checks one asset and emits zero or more findings, closing the
 	// channel when done (mirrors engine.ScanStream's channel discipline —
 	// respect ctx cancellation, always close, never leak a goroutine).
-	Run(ctx context.Context, asset model.Asset) (<-chan model.Finding, error)
+	//
+	// target is the asset's owning Target — most modules only need asset,
+	// but TriggerScheduled modules operate at the domain level (e.g. "query
+	// CT logs for target.Root") and are invoked once per scan cycle with a
+	// zero-value asset; they should read target instead. state is this
+	// module's private, persistent key/value store for remembering prior
+	// results across runs.
+	Run(ctx context.Context, target model.Target, asset model.Asset, state State) (<-chan model.Finding, error)
 }
 
 var registry []Module

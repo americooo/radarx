@@ -63,7 +63,7 @@ func (m *TakeoverModule) Trigger() Trigger   { return TriggerNewAssetsOnly }
 // Run checks one asset's CNAME against the fingerprint table and, on a
 // match, fetches the host over HTTPS then HTTP looking for the service's
 // "nothing here" signature in the body.
-func (m *TakeoverModule) Run(ctx context.Context, asset model.Asset) (<-chan model.Finding, error) {
+func (m *TakeoverModule) Run(ctx context.Context, target model.Target, asset model.Asset, state State) (<-chan model.Finding, error) {
 	out := make(chan model.Finding, 1)
 
 	go func() {
