@@ -22,6 +22,8 @@ export function IsMonitoring():Promise<boolean>;
 
 export function ListTargets():Promise<Array<model.Target>>;
 
+export function SaveTelegramChatID(arg1:string):Promise<void>;
+
 export function SaveTelegramToken(arg1:string):Promise<void>;
 
 export function SendTelegramTest():Promise<void>;

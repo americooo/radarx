@@ -481,6 +481,24 @@ func (a *App) SaveTelegramToken(token string) error {
 	return notify.SaveConfig(cfg)
 }
 
+// SaveTelegramChatID persists a chat id entered directly by the operator —
+// a fallback for when DetectTelegramChatID's getUpdates lookup doesn't find
+// anything (e.g. Telegram already consumed the update, or the wrong bot was
+// messaged). A reliable way to get this number by hand: message
+// @userinfobot or @RawDataBot in Telegram, which reply with it instantly.
+func (a *App) SaveTelegramChatID(chatID string) error {
+	chatID = strings.TrimSpace(chatID)
+	if chatID == "" {
+		return errors.New("chat id is required")
+	}
+	cfg, err := notify.LoadConfig()
+	if err != nil {
+		return err
+	}
+	cfg.TelegramChatID = chatID
+	return notify.SaveConfig(cfg)
+}
+
 // DetectTelegramChatID uses the token already saved via SaveTelegramToken to
 // find "whoever just messaged this bot" (notify.DetectChatID) and persists
 // the result as the chat id alerts will be sent to. Returns the detected

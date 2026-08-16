@@ -482,6 +482,34 @@ func TestSaveTelegramTokenPersists(t *testing.T) {
 	}
 }
 
+func TestSaveTelegramChatIDEmpty(t *testing.T) {
+	a := &App{}
+	if err := a.SaveTelegramChatID("  "); err == nil {
+		t.Fatal("expected error for blank chat id")
+	}
+}
+
+func TestSaveTelegramChatIDPersistsAlongsideToken(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+
+	a := &App{}
+	if err := a.SaveTelegramToken("tok123"); err != nil {
+		t.Fatalf("SaveTelegramToken: %v", err)
+	}
+	if err := a.SaveTelegramChatID("999"); err != nil {
+		t.Fatalf("SaveTelegramChatID: %v", err)
+	}
+
+	cfg, err := notify.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.TelegramToken != "tok123" || cfg.TelegramChatID != "999" {
+		t.Fatalf("expected both token and chat id saved, got %+v", cfg)
+	}
+}
+
 func TestDetectTelegramChatIDWithoutSavedToken(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)

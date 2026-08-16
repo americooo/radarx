@@ -5,6 +5,7 @@ import {
     GetScopeRoots,
     GetTelegramStatus,
     IsMonitoring,
+    SaveTelegramChatID,
     SaveTelegramToken,
     SendTelegramTest,
     StartMonitoring,
@@ -24,6 +25,8 @@ function SettingsView() {
     const [tgToken, setTgToken] = useState('');
     const [tgSaving, setTgSaving] = useState(false);
     const [tgDetecting, setTgDetecting] = useState(false);
+    const [tgManualChatID, setTgManualChatID] = useState('');
+    const [tgSavingChatID, setTgSavingChatID] = useState(false);
     const [tgTesting, setTgTesting] = useState(false);
     const [tgMsg, setTgMsg] = useState('');
     const [tgErr, setTgErr] = useState('');
@@ -93,6 +96,24 @@ function SettingsView() {
             setTgErr(String(err));
         } finally {
             setTgDetecting(false);
+        }
+    }
+
+    async function handleSaveChatIDManually() {
+        const id = tgManualChatID.trim();
+        if (!id) return;
+        setTgSavingChatID(true);
+        setTgMsg('');
+        setTgErr('');
+        try {
+            await SaveTelegramChatID(id);
+            setTgManualChatID('');
+            setTgMsg(`Chat ID saqlandi: ${id}. Endi "Test xabar yuborish" bilan tekshiring.`);
+            refreshTelegramStatus();
+        } catch (err) {
+            setTgErr(String(err));
+        } finally {
+            setTgSavingChatID(false);
         }
     }
 
@@ -292,6 +313,29 @@ function SettingsView() {
                             >
                                 {tgDetecting ? 'Detecting...' : 'Chat ID aniqlash'}
                             </button>
+                        </div>
+                        <div className="mt-3">
+                            Ishlamasa (masalan Telegram eski xabarni topolmasa) — chat ID'ni qo'lda kiriting.
+                            Uni bilish uchun Telegram'da <span className="font-mono">@userinfobot</span> ga
+                            yozing, u darhol raqamli ID'ingizni qaytaradi:
+                            <div className="mt-2 flex gap-3">
+                                <input
+                                    className="flex-1 min-w-[160px] rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm
+                                               placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none"
+                                    type="text"
+                                    placeholder="chat id, masalan 123456789"
+                                    value={tgManualChatID}
+                                    onChange={(e) => setTgManualChatID(e.target.value)}
+                                />
+                                <button
+                                    className="rounded-md border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-medium
+                                               text-emerald-400 hover:border-emerald-600 disabled:cursor-not-allowed disabled:opacity-40"
+                                    onClick={handleSaveChatIDManually}
+                                    disabled={tgSavingChatID || !tgManualChatID.trim()}
+                                >
+                                    {tgSavingChatID ? 'Saving...' : 'Chat ID saqlash'}
+                                </button>
+                            </div>
                         </div>
                     </li>
                     <li>

@@ -42,6 +42,10 @@ export function ListTargets() {
   return window['go']['main']['App']['ListTargets']();
 }
 
+export function SaveTelegramChatID(arg1) {
+  return window['go']['main']['App']['SaveTelegramChatID'](arg1);
+}
+
 export function SaveTelegramToken(arg1) {
   return window['go']['main']['App']['SaveTelegramToken'](arg1);
 }
