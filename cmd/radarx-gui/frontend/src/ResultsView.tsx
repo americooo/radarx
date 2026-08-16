@@ -1,5 +1,5 @@
 import {useEffect, useState} from 'react';
-import {GetLatestSnapshot, ListTargets} from '../wailsjs/go/main/App';
+import {ExportReport, GetLatestSnapshot, ListTargets} from '../wailsjs/go/main/App';
 import {model} from '../wailsjs/go/models';
 import {assetDetail} from './ScanView';
 
@@ -10,6 +10,10 @@ function ResultsView() {
     const [snapErr, setSnapErr] = useState('');
     const [loading, setLoading] = useState(false);
     const [filter, setFilter] = useState('');
+
+    const [exporting, setExporting] = useState(false);
+    const [exportMsg, setExportMsg] = useState('');
+    const [exportErr, setExportErr] = useState('');
 
     useEffect(() => {
         ListTargets().then((res) => {
@@ -27,11 +31,28 @@ function ResultsView() {
         setLoading(true);
         setSnapErr('');
         setSnapshot(null);
+        setExportMsg('');
+        setExportErr('');
         GetLatestSnapshot(selected)
             .then((snap) => setSnapshot(snap))
             .catch((err) => setSnapErr(String(err)))
             .finally(() => setLoading(false));
     }, [selected]);
+
+    async function handleExport() {
+        if (!selected) return;
+        setExporting(true);
+        setExportMsg('');
+        setExportErr('');
+        try {
+            const path = await ExportReport(selected);
+            setExportMsg(`Saved to ${path}`);
+        } catch (err) {
+            setExportErr(String(err));
+        } finally {
+            setExporting(false);
+        }
+    }
 
     const assets = (snapshot?.assets || []).filter((a) => {
         if (!filter.trim()) return true;
@@ -71,7 +92,26 @@ function ResultsView() {
                     value={filter}
                     onChange={(e) => setFilter(e.target.value)}
                 />
+                <button
+                    className="rounded-md border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-medium text-emerald-400
+                               hover:border-emerald-600 disabled:cursor-not-allowed disabled:opacity-40"
+                    onClick={handleExport}
+                    disabled={!selected || !snapshot || exporting}
+                >
+                    {exporting ? 'Exporting...' : 'Export report'}
+                </button>
             </div>
+
+            {exportMsg && (
+                <div className="mt-4 rounded-md border border-emerald-800 bg-emerald-950/50 px-3 py-2 text-sm text-emerald-300">
+                    {exportMsg}
+                </div>
+            )}
+            {exportErr && (
+                <div className="mt-4 rounded-md border border-red-800 bg-red-950/50 px-3 py-2 text-sm text-red-300">
+                    {exportErr}
+                </div>
+            )}
 
             {loading && <p className="mt-4 text-sm text-slate-500">Loading...</p>}
 

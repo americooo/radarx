@@ -244,19 +244,6 @@ func cmdList(st store.Store) {
 	}
 }
 
-// buildNotifier assembles the active notification channels. Console and desktop
-// are always on; Telegram is added only if credentials are present in the env.
-func buildNotifier() notify.Notifier {
-	channels := []notify.Notifier{notify.Console{}, notify.Desktop{}}
-	if tg, ok := notify.NewTelegramFromEnv(); ok {
-		channels = append(channels, tg)
-		fmt.Println("telegram notifications: enabled")
-	} else {
-		fmt.Println("telegram notifications: disabled (set RADARX_TG_TOKEN and RADARX_TG_CHAT_ID)")
-	}
-	return notify.Multi{Notifiers: channels}
-}
-
 // cmdWatch runs the background scheduler until interrupted (Ctrl+C).
 func cmdWatch(st store.Store, args []string) {
 	fs := flag.NewFlagSet("watch", flag.ExitOnError)
@@ -265,7 +252,12 @@ func cmdWatch(st store.Store, args []string) {
 	webAddr := fs.String("web", "", "also serve the dashboard at this address, e.g. 127.0.0.1:7777")
 	_ = fs.Parse(args)
 
-	n := buildNotifier()
+	if _, ok := notify.NewTelegramFromEnv(); ok {
+		fmt.Println("telegram notifications: enabled")
+	} else {
+		fmt.Println("telegram notifications: disabled (set RADARX_TG_TOKEN and RADARX_TG_CHAT_ID)")
+	}
+	n := notify.Default()
 	sch := scheduler.New(st, n, scheduler.Options{
 		Workers:   *workers,
 		MinPeriod: *minPeriod,

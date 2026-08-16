@@ -16,6 +16,9 @@ import (
 	"github.com/americooo/radarx/internal/diff"
 	"github.com/americooo/radarx/internal/engine"
 	"github.com/americooo/radarx/internal/model"
+	"github.com/americooo/radarx/internal/notify"
+	"github.com/americooo/radarx/internal/report"
+	"github.com/americooo/radarx/internal/scheduler"
 	"github.com/americooo/radarx/internal/scope"
 	"github.com/americooo/radarx/internal/store"
 )
@@ -28,6 +31,14 @@ type App struct {
 
 	mu     sync.Mutex
 	cancel context.CancelFunc // cancels the in-flight scan, nil if none running
+
+	// schedMu/schedCancel track the background continuous-monitoring loop
+	// (internal/scheduler). Kept separate from mu/cancel above: a manual
+	// one-off scan (StartScan/StopScan) and background monitoring
+	// (StartMonitoring/StopMonitoring) are independent and can run at the
+	// same time without contending on the same lock.
+	schedMu     sync.Mutex
+	schedCancel context.CancelFunc
 
 	st store.Store // nil if the store failed to open (methods below check this)
 }
@@ -179,6 +190,104 @@ func (a *App) StopScan() error {
 	}
 	a.cancel()
 	return nil
+}
+
+// StartMonitoring starts the background scheduler (internal/scheduler) which
+// periodically rescans every enabled target on its configured interval,
+// diffs against the last snapshot, and pushes any signal through
+// notify.Default() (console + desktop, plus Telegram if configured). It
+// returns immediately; the scheduler runs until StopMonitoring is called or
+// the app shuts down (see OnShutdown in main.go).
+func (a *App) StartMonitoring() error {
+	if a.st == nil {
+		return errors.New("store is not available")
+	}
+
+	a.schedMu.Lock()
+	defer a.schedMu.Unlock()
+	if a.schedCancel != nil {
+		return errors.New("monitoring is already running")
+	}
+
+	sp, err := scopePath()
+	if err != nil {
+		return err
+	}
+
+	sched := scheduler.New(a.st, notify.Default(), scheduler.Options{ScopePath: sp})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	a.schedCancel = cancel
+
+	go func() {
+		if err := sched.Run(ctx); err != nil && err != context.Canceled {
+			log.Printf("radarx-gui: scheduler stopped: %v", err)
+		}
+	}()
+
+	return nil
+}
+
+// StopMonitoring cancels the background scheduler started by StartMonitoring.
+func (a *App) StopMonitoring() error {
+	a.schedMu.Lock()
+	defer a.schedMu.Unlock()
+
+	if a.schedCancel == nil {
+		return errors.New("monitoring is not running")
+	}
+	a.schedCancel()
+	a.schedCancel = nil
+	return nil
+}
+
+// IsMonitoring reports whether the background scheduler is currently
+// running, so the frontend can render an accurate toggle state.
+func (a *App) IsMonitoring() bool {
+	a.schedMu.Lock()
+	defer a.schedMu.Unlock()
+	return a.schedCancel != nil
+}
+
+// ExportReport writes a HackerOne-ready markdown asset inventory for the
+// target's latest snapshot to ~/.radarx/reports/<targetID>-<timestamp>.md
+// and returns the path written.
+func (a *App) ExportReport(targetID string) (string, error) {
+	if a.st == nil {
+		return "", errors.New("store is not available")
+	}
+
+	snap, ok, err := a.st.LatestSnapshot(targetID)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", fmt.Errorf("no scan yet for this target")
+	}
+
+	t, found := a.findTarget(targetID)
+	if !found {
+		t = model.Target{ID: targetID, Root: snap.Root}
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = "."
+	}
+	dir := filepath.Join(home, ".radarx", "reports")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+
+	name := fmt.Sprintf("%s-%s.md", targetID, time.Now().UTC().Format(time.RFC3339))
+	name = strings.ReplaceAll(name, ":", "-") // RFC3339 colons are awkward in filenames on Windows
+	path := filepath.Join(dir, name)
+
+	md := report.Inventory(t, snap)
+	if err := os.WriteFile(path, []byte(md), 0o644); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 // findTarget looks up a target by id in the store. Callers must ensure

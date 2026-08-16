@@ -10,6 +10,10 @@ export function AuthorizeTarget(arg1) {
   return window['go']['main']['App']['AuthorizeTarget'](arg1);
 }
 
+export function ExportReport(arg1) {
+  return window['go']['main']['App']['ExportReport'](arg1);
+}
+
 export function GetDiff(arg1) {
   return window['go']['main']['App']['GetDiff'](arg1);
 }
@@ -26,12 +30,24 @@ export function GetTelegramStatus() {
   return window['go']['main']['App']['GetTelegramStatus']();
 }
 
+export function IsMonitoring() {
+  return window['go']['main']['App']['IsMonitoring']();
+}
+
 export function ListTargets() {
   return window['go']['main']['App']['ListTargets']();
 }
 
+export function StartMonitoring() {
+  return window['go']['main']['App']['StartMonitoring']();
+}
+
 export function StartScan(arg1) {
   return window['go']['main']['App']['StartScan'](arg1);
+}
+
+export function StopMonitoring() {
+  return window['go']['main']['App']['StopMonitoring']();
 }
 
 export function StopScan() {

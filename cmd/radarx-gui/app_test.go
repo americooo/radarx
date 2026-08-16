@@ -306,6 +306,99 @@ func TestGetDiffTwoSnapshots(t *testing.T) {
 	}
 }
 
+func TestExportReportNoSnapshot(t *testing.T) {
+	a := testApp(t)
+	if err := a.st.SaveTarget(model.Target{ID: "t1", Root: "t1.com", AddedAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := a.ExportReport("t1"); err == nil {
+		t.Fatal("expected error when no scan has run yet")
+	} else if !strings.Contains(err.Error(), "no scan yet") {
+		t.Fatalf("expected 'no scan yet' error, got: %v", err)
+	}
+}
+
+func TestExportReportNoStore(t *testing.T) {
+	a := &App{}
+	if _, err := a.ExportReport("t1"); err == nil {
+		t.Fatal("expected error when store is not available")
+	}
+}
+
+func TestExportReportWritesFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+
+	a := testApp(t)
+	if err := a.st.SaveTarget(model.Target{ID: "t1", Root: "t1.com", Label: "Acme", AddedAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	snap := model.Snapshot{
+		TargetID: "t1", Root: "t1.com", TakenAt: time.Now().UTC(),
+		Assets: []model.Asset{{Kind: model.KindSubdomain, Key: "www.t1.com", Host: "www.t1.com"}},
+	}
+	if err := a.st.SaveSnapshot(snap); err != nil {
+		t.Fatal(err)
+	}
+
+	path, err := a.ExportReport("t1")
+	if err != nil {
+		t.Fatalf("ExportReport: %v", err)
+	}
+
+	wantDir := filepath.Join(dir, ".radarx", "reports")
+	if filepath.Dir(path) != wantDir {
+		t.Fatalf("expected report in %s, got %s", wantDir, path)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("expected report file to exist: %v", err)
+	}
+	if !strings.Contains(string(data), "www.t1.com") {
+		t.Fatalf("expected report to mention www.t1.com, got: %s", data)
+	}
+}
+
+func TestMonitoringStateTransitions(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+
+	a := testApp(t)
+
+	if a.IsMonitoring() {
+		t.Fatal("expected monitoring to be off initially")
+	}
+	if err := a.StopMonitoring(); err == nil {
+		t.Fatal("expected error stopping monitoring that isn't running")
+	}
+
+	if err := a.StartMonitoring(); err != nil {
+		t.Fatalf("StartMonitoring: %v", err)
+	}
+	if !a.IsMonitoring() {
+		t.Fatal("expected monitoring to be on after StartMonitoring")
+	}
+	if err := a.StartMonitoring(); err == nil {
+		t.Fatal("expected error starting monitoring twice")
+	}
+
+	if err := a.StopMonitoring(); err != nil {
+		t.Fatalf("StopMonitoring: %v", err)
+	}
+	if a.IsMonitoring() {
+		t.Fatal("expected monitoring to be off after StopMonitoring")
+	}
+}
+
+func TestStartMonitoringNoStore(t *testing.T) {
+	a := &App{}
+	if err := a.StartMonitoring(); err == nil {
+		t.Fatal("expected error when store is not available")
+	}
+}
+
 func TestGetTelegramStatus(t *testing.T) {
 	t.Setenv("RADARX_TG_TOKEN", "")
 	t.Setenv("RADARX_TG_CHAT_ID", "")

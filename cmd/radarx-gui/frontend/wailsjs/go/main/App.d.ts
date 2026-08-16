@@ -6,6 +6,8 @@ export function AddTarget(arg1:string,arg2:string,arg3:number):Promise<void>;
 
 export function AuthorizeTarget(arg1:string):Promise<void>;
 
+export function ExportReport(arg1:string):Promise<string>;
+
 export function GetDiff(arg1:string):Promise<model.DiffResult>;
 
 export function GetLatestSnapshot(arg1:string):Promise<model.Snapshot>;
@@ -14,8 +16,14 @@ export function GetScopeRoots():Promise<Array<string>>;
 
 export function GetTelegramStatus():Promise<boolean>;
 
+export function IsMonitoring():Promise<boolean>;
+
 export function ListTargets():Promise<Array<model.Target>>;
 
+export function StartMonitoring():Promise<void>;
+
 export function StartScan(arg1:string):Promise<void>;
+
+export function StopMonitoring():Promise<void>;
 
 export function StopScan():Promise<void>;

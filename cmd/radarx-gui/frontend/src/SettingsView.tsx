@@ -1,5 +1,12 @@
 import {useEffect, useState} from 'react';
-import {AuthorizeTarget, GetScopeRoots, GetTelegramStatus} from '../wailsjs/go/main/App';
+import {
+    AuthorizeTarget,
+    GetScopeRoots,
+    GetTelegramStatus,
+    IsMonitoring,
+    StartMonitoring,
+    StopMonitoring,
+} from '../wailsjs/go/main/App';
 
 function SettingsView() {
     const [roots, setRoots] = useState<string[]>([]);
@@ -11,6 +18,10 @@ function SettingsView() {
     const [adding, setAdding] = useState(false);
 
     const [tgEnabled, setTgEnabled] = useState(false);
+
+    const [monitoring, setMonitoring] = useState(false);
+    const [monLoading, setMonLoading] = useState(false);
+    const [monErr, setMonErr] = useState('');
 
     async function refresh() {
         setLoading(true);
@@ -25,10 +36,36 @@ function SettingsView() {
         }
     }
 
+    async function refreshMonitoring() {
+        try {
+            setMonitoring(await IsMonitoring());
+        } catch {
+            setMonitoring(false);
+        }
+    }
+
     useEffect(() => {
         refresh();
+        refreshMonitoring();
         GetTelegramStatus().then(setTgEnabled).catch(() => setTgEnabled(false));
     }, []);
+
+    async function toggleMonitoring() {
+        setMonLoading(true);
+        setMonErr('');
+        try {
+            if (monitoring) {
+                await StopMonitoring();
+            } else {
+                await StartMonitoring();
+            }
+            await refreshMonitoring();
+        } catch (err) {
+            setMonErr(String(err));
+        } finally {
+            setMonLoading(false);
+        }
+    }
 
     async function handleAddDomain() {
         const d = newDomain.trim().toLowerCase();
@@ -109,6 +146,41 @@ function SettingsView() {
                         </ul>
                     )}
                 </div>
+            </div>
+
+            <div className="mt-6 rounded-md border border-slate-800 bg-slate-900/50 p-4">
+                <h2 className="text-sm font-semibold text-slate-300">Continuous Monitoring</h2>
+                <p className="mt-1 text-xs text-slate-500">
+                    Periodically rescans every enabled target on its interval, diffs against the
+                    last snapshot, and notifies you (desktop{tgEnabled ? ' + Telegram' : ''}) when
+                    something changes. Closing the window while this is on keeps it running in the
+                    background instead of quitting.
+                </p>
+
+                <div className="mt-3 flex items-center gap-3">
+                    <span
+                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                            monitoring ? 'bg-emerald-900 text-emerald-300' : 'bg-slate-800 text-slate-400'
+                        }`}
+                    >
+                        {monitoring ? 'running' : 'stopped'}
+                    </span>
+                    <button
+                        className={`rounded-md px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40 ${
+                            monitoring ? 'bg-red-700 hover:bg-red-600' : 'bg-emerald-600 hover:bg-emerald-500'
+                        }`}
+                        onClick={toggleMonitoring}
+                        disabled={monLoading}
+                    >
+                        {monitoring ? 'Stop monitoring' : 'Start monitoring'}
+                    </button>
+                </div>
+
+                {monErr && (
+                    <div className="mt-3 rounded-md border border-red-800 bg-red-950/50 px-3 py-2 text-sm text-red-300">
+                        {monErr}
+                    </div>
+                )}
             </div>
 
             <div className="mt-6 rounded-md border border-slate-800 bg-slate-900/50 p-4">

@@ -13,6 +13,18 @@ import (
 	"github.com/americooo/radarx/internal/model"
 )
 
+// Default assembles the standard set of notification channels: console and
+// desktop are always on, Telegram is added only if RADARX_TG_TOKEN and
+// RADARX_TG_CHAT_ID are set in the environment. Both the CLI and the GUI use
+// this so their notification behaviour never drifts apart.
+func Default() Notifier {
+	channels := []Notifier{Console{}, Desktop{}}
+	if tg, ok := NewTelegramFromEnv(); ok {
+		channels = append(channels, tg)
+	}
+	return Multi{Notifiers: channels}
+}
+
 // Notifier delivers a diff result somewhere the operator will see it.
 type Notifier interface {
 	// Notify sends the diff. Implementations should only surface results that
