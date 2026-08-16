@@ -69,3 +69,30 @@ func TestLoadMissing(t *testing.T) {
 		t.Error("expected error for missing scope file")
 	}
 }
+
+func TestCheckPath(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "scope.txt")
+	content := "example.com\nOther-Example.org\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := CheckPath(path, "api.example.com"); err != nil {
+		t.Errorf("expected api.example.com to be in scope, got error: %v", err)
+	}
+	if err := CheckPath(path, "sub.other-example.org"); err != nil {
+		t.Errorf("expected sub.other-example.org to be in scope, got error: %v", err)
+	}
+	if err := CheckPath(path, "evil.com"); err == nil {
+		t.Error("expected evil.com to be rejected as out of scope")
+	}
+}
+
+func TestCheckPathMissingFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "does-not-exist.txt")
+	if err := CheckPath(path, "example.com"); err == nil {
+		t.Error("expected error when scope file doesn't exist")
+	}
+}

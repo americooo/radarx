@@ -75,3 +75,20 @@ func (s *Scope) Roots() []string {
 	copy(out, s.roots)
 	return out
 }
+
+// CheckPath loads the scope file at path and reports whether root is
+// authorized. It returns an error if the scope file can't be loaded (e.g.
+// missing or empty — scope not configured yet) or if root isn't covered by
+// any entry in it. Callers (CLI, scheduler) use this as the single gate
+// before ever scanning a target, so scope enforcement can't drift between
+// call sites.
+func CheckPath(path, root string) error {
+	sc, err := Load(path)
+	if err != nil {
+		return fmt.Errorf("scope not configured: %w", err)
+	}
+	if !sc.Allows(root) {
+		return fmt.Errorf("%s is outside the authorized scope (%s)", root, path)
+	}
+	return nil
+}

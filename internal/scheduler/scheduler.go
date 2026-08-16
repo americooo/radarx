@@ -8,6 +8,8 @@ package scheduler
 import (
 	"context"
 	"log"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -15,6 +17,7 @@ import (
 	"github.com/americooo/radarx/internal/engine"
 	"github.com/americooo/radarx/internal/model"
 	"github.com/americooo/radarx/internal/notify"
+	"github.com/americooo/radarx/internal/scope"
 	"github.com/americooo/radarx/internal/store"
 )
 
@@ -23,6 +26,7 @@ type Options struct {
 	Workers   int           // subdomain enum concurrency per scan
 	MinPeriod time.Duration // safety floor on how often any target may scan
 	Logger    *log.Logger
+	ScopePath string // path to the scope file; defaults to ~/.radarx/scope.txt
 }
 
 // Scheduler owns the background scan loop.
@@ -46,6 +50,11 @@ func New(st store.Store, n notify.Notifier, opts Options) *Scheduler {
 	}
 	if opts.Logger == nil {
 		opts.Logger = log.Default()
+	}
+	if opts.ScopePath == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			opts.ScopePath = filepath.Join(home, ".radarx", "scope.txt")
+		}
 	}
 	return &Scheduler{
 		store:    st,
@@ -92,6 +101,10 @@ func (s *Scheduler) sweep(ctx context.Context) {
 			continue
 		}
 		if !s.due(t, now) {
+			continue
+		}
+		if err := scope.CheckPath(s.opts.ScopePath, t.Root); err != nil {
+			s.log.Printf("[%s] skipping: %v", t.Root, err)
 			continue
 		}
 		t := t

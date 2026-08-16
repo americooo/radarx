@@ -12,6 +12,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
@@ -29,6 +30,7 @@ import (
 	"github.com/americooo/radarx/internal/notify"
 	"github.com/americooo/radarx/internal/report"
 	"github.com/americooo/radarx/internal/scheduler"
+	"github.com/americooo/radarx/internal/scope"
 	"github.com/americooo/radarx/internal/store"
 	"github.com/americooo/radarx/internal/web"
 )
@@ -81,6 +83,33 @@ func openStore() (store.Store, error) {
 	return store.NewSQLiteStore(filepath.Join(home, ".radarx", "radarx.db"))
 }
 
+// scopePath returns the path to the operator's scope file, ~/.radarx/scope.txt.
+// This lives alongside the store's own ~/.radarx directory.
+func scopePath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = "."
+	}
+	return filepath.Join(home, ".radarx", "scope.txt"), nil
+}
+
+// checkInScope is the single gate a scan must pass before it's allowed to
+// touch the network: the scope file must exist and root must be covered by
+// it. It's kept separate from cmdScan so it can be unit tested directly.
+func checkInScope(path, root string) error {
+	return scope.CheckPath(path, root)
+}
+
+// confirmScope asks the operator to explicitly authorize scanning root. It
+// reads a single line from stdin and only treats "y"/"yes" (case-insensitive)
+// as consent.
+func confirmScope(root string) bool {
+	fmt.Printf("Ushbu domenni (%s) scan qilishga ruxsatingiz bormi (o'zingizning infratuzilmangiz yoki ruxsat berilgan bug-bounty scope)? [y/N]: ", root)
+	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	line = strings.ToLower(strings.TrimSpace(line))
+	return line == "y" || line == "yes"
+}
+
 func cmdAdd(st store.Store, args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "usage: radarx add <root-domain> [--label ..] [--interval ..]")
@@ -95,6 +124,34 @@ func cmdAdd(st store.Store, args []string) {
 	label := fs.String("label", "", "human label / program name")
 	interval := fs.Int("interval", 60, "scan interval in minutes")
 	_ = fs.Parse(args[1:])
+
+	sp, err := scopePath()
+	must(err)
+
+	if _, statErr := os.Stat(sp); os.IsNotExist(statErr) {
+		if !confirmScope(root) {
+			fmt.Println("bekor qilindi: scope tasdiqlanmadi, hech narsa saqlanmadi.")
+			return
+		}
+		must(os.MkdirAll(filepath.Dir(sp), 0o755))
+		must(os.WriteFile(sp, []byte(root+"\n"), 0o644))
+	} else {
+		sc, loadErr := scope.Load(sp)
+		must(loadErr)
+		if !sc.Allows(root) {
+			fmt.Printf("%s joriy scope'da yo'q.\n", root)
+			if !confirmScope(root) {
+				fmt.Println("bekor qilindi: scope tasdiqlanmadi, hech narsa saqlanmadi.")
+				return
+			}
+			f, openErr := os.OpenFile(sp, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o644)
+			must(openErr)
+			_, writeErr := f.WriteString(root + "\n")
+			must(writeErr)
+			must(f.Close())
+		}
+	}
+
 	t := model.Target{
 		ID:        slug(root),
 		Root:      root,
@@ -132,6 +189,17 @@ func cmdScan(st store.Store, args []string) {
 	}
 	if !found {
 		t = model.Target{ID: id, Root: root, Enabled: true, IntervalM: 60, AddedAt: time.Now().UTC()}
+	}
+
+	sp, err := scopePath()
+	must(err)
+	if _, statErr := os.Stat(sp); os.IsNotExist(statErr) {
+		fmt.Fprintf(os.Stderr, "scope hali sozlanmagan, avval `radarx add %s` orqali scope'ga qo'shing\n", t.Root)
+		return
+	}
+	if err := checkInScope(sp, t.Root); err != nil {
+		fmt.Fprintf(os.Stderr, "SCOPE VIOLATION: %s scope tashqarisida, scan qilinmaydi (%v)\n", t.Root, err)
+		return
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
