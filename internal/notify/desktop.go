@@ -30,6 +30,15 @@ func (Desktop) Notify(d model.DiffResult) error {
 	return sendDesktop(title, body)
 }
 
+func (Desktop) NotifyFinding(f model.Finding) error {
+	title := fmt.Sprintf("RadarX: %s — %s", f.Module, f.Severity)
+	body := f.Title
+	if f.Asset.Key != "" {
+		body = fmt.Sprintf("%s (%s)", body, f.Asset.Key)
+	}
+	return sendDesktop(title, body)
+}
+
 func sendDesktop(title, body string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancel()

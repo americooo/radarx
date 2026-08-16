@@ -51,6 +51,10 @@ func (t *Telegram) Notify(d model.DiffResult) error {
 	return t.send(FormatText(d))
 }
 
+func (t *Telegram) NotifyFinding(f model.Finding) error {
+	return t.SendRaw(FormatFinding(f))
+}
+
 // SendRaw posts an arbitrary message (used for startup pings / test messages).
 func (t *Telegram) SendRaw(text string) error { return t.send(text) }
 

@@ -59,6 +59,10 @@ type Notifier interface {
 	// Notify sends the diff. Implementations should only surface results that
 	// carry signal (callers typically skip empty diffs before calling).
 	Notify(d model.DiffResult) error
+	// NotifyFinding sends a single module Finding (e.g. a subdomain takeover
+	// signal) — distinct from Notify because findings arrive one at a time
+	// from internal/modules, not as a batched diff.
+	NotifyFinding(f model.Finding) error
 	// Name identifies the channel for logging.
 	Name() string
 }
@@ -86,6 +90,22 @@ func FormatText(d model.DiffResult) string {
 			fmt.Fprintf(&b, "🔴 DEL  %s  %s\n", c.Kind, c.Key)
 		}
 		shown++
+	}
+	return b.String()
+}
+
+// FormatFinding renders a Finding into a compact, channel-agnostic message.
+// Used by console and Telegram notifiers so the wording stays consistent.
+func FormatFinding(f model.Finding) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "🎯 RadarX Finding — %s\n", f.Module)
+	fmt.Fprintf(&b, "%s: %s\n", f.Severity, f.Title)
+	if f.Description != "" {
+		fmt.Fprintf(&b, "%s\n", f.Description)
+	}
+	fmt.Fprintf(&b, "Asset: %s\n", f.Asset.Key)
+	if f.Evidence != "" {
+		fmt.Fprintf(&b, "Evidence: %s\n", f.Evidence)
 	}
 	return b.String()
 }
@@ -132,6 +152,19 @@ func (m Multi) Notify(d model.DiffResult) error {
 	return nil
 }
 
+func (m Multi) NotifyFinding(f model.Finding) error {
+	var errs []string
+	for _, n := range m.Notifiers {
+		if err := n.NotifyFinding(f); err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", n.Name(), err))
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("notify errors: %s", strings.Join(errs, "; "))
+	}
+	return nil
+}
+
 // Console prints the diff to stdout. Always available, no config needed.
 type Console struct{}
 
@@ -139,5 +172,10 @@ func (Console) Name() string { return "console" }
 
 func (Console) Notify(d model.DiffResult) error {
 	fmt.Print(FormatText(d))
+	return nil
+}
+
+func (Console) NotifyFinding(f model.Finding) error {
+	fmt.Print(FormatFinding(f))
 	return nil
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/americooo/radarx/internal/diff"
 	"github.com/americooo/radarx/internal/engine"
 	"github.com/americooo/radarx/internal/model"
+	"github.com/americooo/radarx/internal/modules"
 	"github.com/americooo/radarx/internal/notify"
 	"github.com/americooo/radarx/internal/scope"
 	"github.com/americooo/radarx/internal/store"
@@ -181,4 +182,25 @@ func (s *Scheduler) scanOne(ctx context.Context, t model.Target) {
 			s.log.Printf("[%s] notify: %v", t.Root, err)
 		}
 	}
+
+	// Run detection modules (e.g. subdomain takeover) against this cycle's
+	// assets and forward any findings to the notifier.
+	newAssets := newAssetsFrom(d)
+	for f := range modules.Run(ctx, newAssets, snap.Assets) {
+		if err := s.notifier.NotifyFinding(f); err != nil {
+			s.log.Printf("[%s] notify finding: %v", t.Root, err)
+		}
+	}
+}
+
+// newAssetsFrom extracts the assets that are brand-new in this diff — the
+// asset set TriggerNewAssetsOnly modules should run against.
+func newAssetsFrom(d model.DiffResult) []model.Asset {
+	var out []model.Asset
+	for _, c := range d.Changes {
+		if c.Type == model.ChangeNew && c.After != nil {
+			out = append(out, *c.After)
+		}
+	}
+	return out
 }
