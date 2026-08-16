@@ -42,9 +42,10 @@ radarx/
 ├── cmd/
 │   ├── radarx/              # mavjud CLI (add, scan, list, watch, serve, report, history, test-telegram)
 │   │   └── main.go
-│   └── radarx-gui/          # Wails v2 desktop GUI (Faza 3) — main.go, app.go va frontend/
+│   └── radarx-gui/          # Wails v2 desktop GUI (Faza 3-4) — main.go, app.go va frontend/
 │       ├── main.go          # //go:embed all:frontend/dist
-│       ├── app.go           # App{ctx, cancel} — StartScan/StopScan bind qilingan metodlar
+│       ├── app.go           # App{ctx, cancel, st store.Store} — Start/StopScan, Targets/Scope/
+│       │                    #   Snapshot/Diff/Telegram bind qilingan metodlar (Faza 4)
 │       ├── wails.json
 │       └── frontend/        # React+TS+Vite+Tailwind (frontend/ shu yerda, repo ildizida EMAS —
 │                             #   //go:embed faqat pastki papkalarni ko'radi, shuning uchun
