@@ -54,6 +54,61 @@ func (t *Telegram) Notify(d model.DiffResult) error {
 // SendRaw posts an arbitrary message (used for startup pings / test messages).
 func (t *Telegram) SendRaw(text string) error { return t.send(text) }
 
+// DetectChatID looks up the chat id of whoever most recently messaged the
+// bot identified by token, via the Bot API's getUpdates. This is how the
+// Settings screen figures out "the person using this program" without
+// making the operator hunt for their numeric chat id by hand: they message
+// their own bot once, then this call reads it back.
+//
+// It deliberately does not accept a chat id — the whole point is to derive
+// one from "whoever just talked to this bot", so only that person's chat is
+// ever wired up to receive alerts.
+func DetectChatID(ctx context.Context, token string) (string, error) {
+	if token == "" {
+		return "", fmt.Errorf("bot token is required")
+	}
+
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/getUpdates?limit=1&offset=-1", token)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+
+	client := &http.Client{Timeout: 12 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var out struct {
+		OK          bool   `json:"ok"`
+		Description string `json:"description"`
+		Result      []struct {
+			Message struct {
+				Chat struct {
+					ID int64 `json:"id"`
+				} `json:"chat"`
+			} `json:"message"`
+		} `json:"result"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", fmt.Errorf("telegram API: unexpected response (%w)", err)
+	}
+	if !out.OK {
+		return "", fmt.Errorf("telegram API: %s — check the bot token", out.Description)
+	}
+	if len(out.Result) == 0 {
+		return "", fmt.Errorf("no messages found — open a chat with your bot in Telegram, send it any message (e.g. /start), then try again")
+	}
+
+	chat := out.Result[len(out.Result)-1].Message.Chat
+	if chat.ID == 0 {
+		return "", fmt.Errorf("could not read a chat id from the bot's latest message")
+	}
+	return fmt.Sprintf("%d", chat.ID), nil
+}
+
 func (t *Telegram) send(text string) error {
 	payload := map[string]any{
 		"chat_id":                  t.ChatID,

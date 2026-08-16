@@ -1,9 +1,12 @@
 import {useEffect, useState} from 'react';
 import {
     AuthorizeTarget,
+    DetectTelegramChatID,
     GetScopeRoots,
     GetTelegramStatus,
     IsMonitoring,
+    SaveTelegramToken,
+    SendTelegramTest,
     StartMonitoring,
     StopMonitoring,
 } from '../wailsjs/go/main/App';
@@ -18,6 +21,12 @@ function SettingsView() {
     const [adding, setAdding] = useState(false);
 
     const [tgEnabled, setTgEnabled] = useState(false);
+    const [tgToken, setTgToken] = useState('');
+    const [tgSaving, setTgSaving] = useState(false);
+    const [tgDetecting, setTgDetecting] = useState(false);
+    const [tgTesting, setTgTesting] = useState(false);
+    const [tgMsg, setTgMsg] = useState('');
+    const [tgErr, setTgErr] = useState('');
 
     const [monitoring, setMonitoring] = useState(false);
     const [monLoading, setMonLoading] = useState(false);
@@ -44,11 +53,62 @@ function SettingsView() {
         }
     }
 
+    function refreshTelegramStatus() {
+        GetTelegramStatus().then(setTgEnabled).catch(() => setTgEnabled(false));
+    }
+
     useEffect(() => {
         refresh();
         refreshMonitoring();
-        GetTelegramStatus().then(setTgEnabled).catch(() => setTgEnabled(false));
+        refreshTelegramStatus();
     }, []);
+
+    async function handleSaveToken() {
+        const tok = tgToken.trim();
+        if (!tok) return;
+        setTgSaving(true);
+        setTgMsg('');
+        setTgErr('');
+        try {
+            await SaveTelegramToken(tok);
+            setTgToken('');
+            setTgMsg('Token saqlandi. Endi botga Telegramda bitta xabar yozing (masalan /start), keyin "Chat ID aniqlash" tugmasini bosing.');
+            refreshTelegramStatus();
+        } catch (err) {
+            setTgErr(String(err));
+        } finally {
+            setTgSaving(false);
+        }
+    }
+
+    async function handleDetectChatID() {
+        setTgDetecting(true);
+        setTgMsg('');
+        setTgErr('');
+        try {
+            const chatID = await DetectTelegramChatID();
+            setTgMsg(`Chat ID aniqlandi va saqlandi: ${chatID}. Endi "Test xabar yuborish" bilan tekshiring.`);
+            refreshTelegramStatus();
+        } catch (err) {
+            setTgErr(String(err));
+        } finally {
+            setTgDetecting(false);
+        }
+    }
+
+    async function handleSendTest() {
+        setTgTesting(true);
+        setTgMsg('');
+        setTgErr('');
+        try {
+            await SendTelegramTest();
+            setTgMsg('Test xabar yuborildi — Telegramni tekshiring.');
+        } catch (err) {
+            setTgErr(String(err));
+        } finally {
+            setTgTesting(false);
+        }
+    }
 
     async function toggleMonitoring() {
         setMonLoading(true);
@@ -194,8 +254,75 @@ function SettingsView() {
                         {tgEnabled ? 'enabled' : 'disabled'}
                     </span>
                 </div>
-                <p className="mt-2 text-xs text-slate-500">
-                    RADARX_TG_TOKEN / RADARX_TG_CHAT_ID environment variable'lar orqali sozlanadi.
+
+                <ol className="mt-3 space-y-3 text-xs text-slate-500">
+                    <li>
+                        1. @BotFather orqali bot yarating, tokenni shu yerga kiriting va saqlang (token
+                        faqat sizning kompyuteringizda, <span className="font-mono">~/.radarx/config.json</span> da
+                        saqlanadi — hech qayerga yuborilmaydi).
+                        <div className="mt-2 flex gap-3">
+                            <input
+                                className="flex-1 min-w-[200px] rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm
+                                           placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none"
+                                type="password"
+                                placeholder="bot token"
+                                value={tgToken}
+                                onChange={(e) => setTgToken(e.target.value)}
+                            />
+                            <button
+                                className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white
+                                           hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
+                                onClick={handleSaveToken}
+                                disabled={tgSaving || !tgToken.trim()}
+                            >
+                                {tgSaving ? 'Saving...' : 'Save token'}
+                            </button>
+                        </div>
+                    </li>
+                    <li>
+                        2. Telegramda o'z botingizga bitta xabar yozing (masalan{' '}
+                        <span className="font-mono">/start</span>), keyin bosing — faqat shu botga yozgan odam
+                        xabarnoma oladi:
+                        <div className="mt-2">
+                            <button
+                                className="rounded-md border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-medium
+                                           text-emerald-400 hover:border-emerald-600 disabled:cursor-not-allowed disabled:opacity-40"
+                                onClick={handleDetectChatID}
+                                disabled={tgDetecting}
+                            >
+                                {tgDetecting ? 'Detecting...' : 'Chat ID aniqlash'}
+                            </button>
+                        </div>
+                    </li>
+                    <li>
+                        3. Tekshiring:
+                        <div className="mt-2">
+                            <button
+                                className="rounded-md border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-medium
+                                           text-emerald-400 hover:border-emerald-600 disabled:cursor-not-allowed disabled:opacity-40"
+                                onClick={handleSendTest}
+                                disabled={tgTesting}
+                            >
+                                {tgTesting ? 'Sending...' : 'Test xabar yuborish'}
+                            </button>
+                        </div>
+                    </li>
+                </ol>
+
+                {tgMsg && (
+                    <div className="mt-3 rounded-md border border-emerald-800 bg-emerald-950/50 px-3 py-2 text-sm text-emerald-300">
+                        {tgMsg}
+                    </div>
+                )}
+                {tgErr && (
+                    <div className="mt-3 rounded-md border border-red-800 bg-red-950/50 px-3 py-2 text-sm text-red-300">
+                        {tgErr}
+                    </div>
+                )}
+
+                <p className="mt-3 text-xs text-slate-500">
+                    Muqobil: RADARX_TG_TOKEN / RADARX_TG_CHAT_ID environment variable'lar orqali ham sozlash mumkin
+                    (ular saqlangan konfiguratsiyadan ustuvor).
                 </p>
             </div>
         </div>

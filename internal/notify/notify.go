@@ -14,13 +14,16 @@ import (
 )
 
 // Default assembles the standard set of notification channels: console and
-// desktop are always on, Telegram is added only if RADARX_TG_TOKEN and
-// RADARX_TG_CHAT_ID are set in the environment. Both the CLI and the GUI use
-// this so their notification behaviour never drifts apart.
+// desktop are always on, Telegram is added only if credentials are available
+// (environment variables or the local config saved from the GUI's Settings
+// screen — see Credentials). Both the CLI and the GUI use this so their
+// notification behaviour never drifts apart.
 func Default() Notifier {
 	channels := []Notifier{Console{}, Desktop{}}
-	if tg, ok := NewTelegramFromEnv(); ok {
-		channels = append(channels, tg)
+	if token, chatID, ok := Credentials(); ok {
+		if tg, ok := NewTelegram(token, chatID); ok {
+			channels = append(channels, tg)
+		}
 	}
 	return Multi{Notifiers: channels}
 }

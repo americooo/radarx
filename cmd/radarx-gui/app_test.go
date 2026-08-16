@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/americooo/radarx/internal/model"
+	"github.com/americooo/radarx/internal/notify"
 	"github.com/americooo/radarx/internal/store"
 )
 
@@ -456,7 +457,58 @@ func TestStartMonitoringNoStore(t *testing.T) {
 	}
 }
 
+func TestSaveTelegramTokenEmpty(t *testing.T) {
+	a := &App{}
+	if err := a.SaveTelegramToken("  "); err == nil {
+		t.Fatal("expected error for blank token")
+	}
+}
+
+func TestSaveTelegramTokenPersists(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+
+	a := &App{}
+	if err := a.SaveTelegramToken("tok123"); err != nil {
+		t.Fatalf("SaveTelegramToken: %v", err)
+	}
+
+	cfg, err := notify.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.TelegramToken != "tok123" {
+		t.Fatalf("expected token to be saved, got %+v", cfg)
+	}
+}
+
+func TestDetectTelegramChatIDWithoutSavedToken(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+
+	a := &App{}
+	if _, err := a.DetectTelegramChatID(); err == nil {
+		t.Fatal("expected error when no token has been saved yet")
+	}
+}
+
+func TestSendTelegramTestWithoutCredentials(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("RADARX_TG_TOKEN", "")
+	t.Setenv("RADARX_TG_CHAT_ID", "")
+
+	a := &App{}
+	if err := a.SendTelegramTest(); err == nil {
+		t.Fatal("expected error when no Telegram credentials are configured")
+	}
+}
+
 func TestGetTelegramStatus(t *testing.T) {
+	// Isolate HOME: GetTelegramStatus now also falls back to
+	// ~/.radarx/config.json, and a real one may exist on the machine
+	// running this test once Telegram is configured through the actual app.
+	t.Setenv("HOME", t.TempDir())
 	t.Setenv("RADARX_TG_TOKEN", "")
 	t.Setenv("RADARX_TG_CHAT_ID", "")
 	a := &App{}

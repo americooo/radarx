@@ -457,9 +457,69 @@ func (a *App) GetDiff(targetID string) (model.DiffResult, error) {
 	return d, nil
 }
 
-// GetTelegramStatus reports whether Telegram notifications are configured
-// via environment variables. This is read-only — configuring/saving
-// Telegram credentials from the GUI is out of scope for this phase.
+// GetTelegramStatus reports whether Telegram notifications are configured,
+// via either environment variables or the local config saved below (see
+// notify.Credentials — both sources are checked, env taking priority).
 func (a *App) GetTelegramStatus() bool {
-	return os.Getenv("RADARX_TG_TOKEN") != "" && os.Getenv("RADARX_TG_CHAT_ID") != ""
+	_, _, ok := notify.Credentials()
+	return ok
+}
+
+// SaveTelegramToken persists the bot token to ~/.radarx/config.json (0600),
+// keeping any previously saved chat id. The token never round-trips back to
+// the frontend — write-only from the UI's perspective.
+func (a *App) SaveTelegramToken(token string) error {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return errors.New("bot token is required")
+	}
+	cfg, err := notify.LoadConfig()
+	if err != nil {
+		return err
+	}
+	cfg.TelegramToken = token
+	return notify.SaveConfig(cfg)
+}
+
+// DetectTelegramChatID uses the token already saved via SaveTelegramToken to
+// find "whoever just messaged this bot" (notify.DetectChatID) and persists
+// the result as the chat id alerts will be sent to. Returns the detected
+// chat id so the UI can show it back for confirmation.
+func (a *App) DetectTelegramChatID() (string, error) {
+	cfg, err := notify.LoadConfig()
+	if err != nil {
+		return "", err
+	}
+	if cfg.TelegramToken == "" {
+		return "", errors.New("save a bot token first")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	chatID, err := notify.DetectChatID(ctx, cfg.TelegramToken)
+	if err != nil {
+		return "", err
+	}
+
+	cfg.TelegramChatID = chatID
+	if err := notify.SaveConfig(cfg); err != nil {
+		return "", err
+	}
+	return chatID, nil
+}
+
+// SendTelegramTest sends a test message using whatever credentials are
+// currently resolved (env vars or local config), so the operator can
+// confirm alerts actually reach them before relying on continuous
+// monitoring.
+func (a *App) SendTelegramTest() error {
+	token, chatID, ok := notify.Credentials()
+	if !ok {
+		return errors.New("no Telegram credentials configured yet")
+	}
+	tg, ok := notify.NewTelegram(token, chatID)
+	if !ok {
+		return errors.New("no Telegram credentials configured yet")
+	}
+	return tg.SendRaw("✅ RadarX test message — Telegram alerts are working.")
 }

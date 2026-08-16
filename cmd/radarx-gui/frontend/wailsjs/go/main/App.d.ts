@@ -6,6 +6,8 @@ export function AddTarget(arg1:string,arg2:string,arg3:number):Promise<void>;
 
 export function AuthorizeTarget(arg1:string):Promise<void>;
 
+export function DetectTelegramChatID():Promise<string>;
+
 export function ExportReport(arg1:string):Promise<string>;
 
 export function GetDiff(arg1:string):Promise<model.DiffResult>;
@@ -19,6 +21,10 @@ export function GetTelegramStatus():Promise<boolean>;
 export function IsMonitoring():Promise<boolean>;
 
 export function ListTargets():Promise<Array<model.Target>>;
+
+export function SaveTelegramToken(arg1:string):Promise<void>;
+
+export function SendTelegramTest():Promise<void>;
 
 export function StartMonitoring():Promise<void>;
 

@@ -383,7 +383,12 @@ func cmdHistory(st store.Store, args []string) {
 // cmdTestTelegram sends a test message so the operator can confirm their
 // bot token and chat id are correct before relying on alerts.
 func cmdTestTelegram() {
-	tg, ok := notify.NewTelegramFromEnv()
+	token, chatID, ok := notify.Credentials()
+	if !ok {
+		fmt.Fprintln(os.Stderr, "set RADARX_TG_TOKEN and RADARX_TG_CHAT_ID, or configure Telegram in the GUI's Settings tab, first")
+		os.Exit(2)
+	}
+	tg, ok := notify.NewTelegram(token, chatID)
 	if !ok {
 		fmt.Fprintln(os.Stderr, "set RADARX_TG_TOKEN and RADARX_TG_CHAT_ID first")
 		os.Exit(2)

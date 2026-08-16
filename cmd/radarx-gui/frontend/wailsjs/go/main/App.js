@@ -10,6 +10,10 @@ export function AuthorizeTarget(arg1) {
   return window['go']['main']['App']['AuthorizeTarget'](arg1);
 }
 
+export function DetectTelegramChatID() {
+  return window['go']['main']['App']['DetectTelegramChatID']();
+}
+
 export function ExportReport(arg1) {
   return window['go']['main']['App']['ExportReport'](arg1);
 }
@@ -36,6 +40,14 @@ export function IsMonitoring() {
 
 export function ListTargets() {
   return window['go']['main']['App']['ListTargets']();
+}
+
+export function SaveTelegramToken(arg1) {
+  return window['go']['main']['App']['SaveTelegramToken'](arg1);
+}
+
+export function SendTelegramTest() {
+  return window['go']['main']['App']['SendTelegramTest']();
 }
 
 export function StartMonitoring() {
