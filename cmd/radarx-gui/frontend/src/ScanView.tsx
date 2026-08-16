@@ -15,12 +15,38 @@ export interface Asset {
     port?: number;
 }
 
+// Mirrors internal/model.Finding (JSON tags).
+export interface Finding {
+    module: string;
+    severity: string;
+    asset: Asset;
+    title: string;
+    description: string;
+    evidence?: string;
+    taken_at: string;
+}
+
 interface ScanDoneEvent {
     err?: string;
     cancelled: boolean;
 }
 
 type ScanStatus = 'idle' | 'running' | 'done' | 'stopped' | 'error';
+
+function SeverityBadge({severity}: {severity: string}) {
+    const styles: Record<string, string> = {
+        critical: 'bg-red-900 text-red-300',
+        high: 'bg-red-950 text-red-400',
+        medium: 'bg-amber-900 text-amber-300',
+        low: 'bg-blue-900 text-blue-300',
+        info: 'bg-slate-800 text-slate-300',
+    };
+    return (
+        <span className={`rounded-full px-2 py-0.5 text-xs font-medium uppercase ${styles[severity] ?? styles.info}`}>
+            {severity}
+        </span>
+    );
+}
 
 export function assetDetail(a: Asset): string {
     const parts: string[] = [];
@@ -52,6 +78,7 @@ function ScanView() {
     const {t} = useI18n();
     const [target, setTarget] = useState('');
     const [assets, setAssets] = useState<Asset[]>([]);
+    const [findings, setFindings] = useState<Finding[]>([]);
     const [status, setStatus] = useState<ScanStatus>('idle');
     const [errorMsg, setErrorMsg] = useState('');
     const statusRef = useRef(status);
@@ -60,6 +87,9 @@ function ScanView() {
     useEffect(() => {
         EventsOn('scan:asset', (asset: Asset) => {
             setAssets((prev) => [...prev, asset]);
+        });
+        EventsOn('scan:finding', (finding: Finding) => {
+            setFindings((prev) => [...prev, finding]);
         });
         EventsOn('scan:done', (ev: ScanDoneEvent) => {
             if (ev.cancelled) {
@@ -74,6 +104,7 @@ function ScanView() {
 
         return () => {
             EventsOff('scan:asset');
+            EventsOff('scan:finding');
             EventsOff('scan:done');
         };
     }, []);
@@ -81,6 +112,7 @@ function ScanView() {
     async function handleScan() {
         if (!target.trim() || status === 'running') return;
         setAssets([]);
+        setFindings([]);
         setErrorMsg('');
         setStatus('running');
         try {
@@ -175,6 +207,43 @@ function ScanView() {
                                 <td className="px-3 py-2 text-blue-400">{a.kind}</td>
                                 <td className="px-3 py-2 font-mono">{a.key}</td>
                                 <td className="px-3 py-2 text-slate-400">{assetDetail(a)}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+
+            <h2 className="mt-8 text-lg font-semibold text-blue-400">
+                {t('scan.findingsTitle')}
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+                {findings.length} {t(pluralKey('scan.findingsFound', findings.length))}
+            </p>
+
+            <div className="mt-3 overflow-hidden rounded-md border border-blue-900/40 bg-slate-900/20 backdrop-blur-md">
+                <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-900/60 text-slate-400">
+                        <tr>
+                            <th className="px-3 py-2 font-medium">{t('scan.colModule')}</th>
+                            <th className="px-3 py-2 font-medium">{t('scan.colSeverity')}</th>
+                            <th className="px-3 py-2 font-medium">{t('scan.colTitle')}</th>
+                            <th className="px-3 py-2 font-medium">{t('scan.colAsset')}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {findings.length === 0 && (
+                            <tr>
+                                <td colSpan={4} className="px-3 py-6 text-center text-slate-500">
+                                    {t('scan.noFindings')}
+                                </td>
+                            </tr>
+                        )}
+                        {findings.map((f, i) => (
+                            <tr key={`${f.module}-${f.asset.key}-${i}`} className="border-t border-blue-900/30">
+                                <td className="px-3 py-2 text-blue-400">{f.module}</td>
+                                <td className="px-3 py-2"><SeverityBadge severity={f.severity} /></td>
+                                <td className="px-3 py-2 text-slate-300">{f.title}</td>
+                                <td className="px-3 py-2 font-mono text-slate-400">{f.asset.key}</td>
                             </tr>
                         ))}
                     </tbody>

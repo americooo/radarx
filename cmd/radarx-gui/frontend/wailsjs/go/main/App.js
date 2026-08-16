@@ -38,6 +38,10 @@ export function IsMonitoring() {
   return window['go']['main']['App']['IsMonitoring']();
 }
 
+export function ListModules() {
+  return window['go']['main']['App']['ListModules']();
+}
+
 export function ListTargets() {
   return window['go']['main']['App']['ListTargets']();
 }
@@ -52,6 +56,10 @@ export function SaveTelegramToken(arg1) {
 
 export function SendTelegramTest() {
   return window['go']['main']['App']['SendTelegramTest']();
+}
+
+export function SetModuleEnabled(arg1, arg2) {
+  return window['go']['main']['App']['SetModuleEnabled'](arg1, arg2);
 }
 
 export function StartMonitoring() {

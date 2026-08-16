@@ -1,3 +1,26 @@
+export namespace main {
+	
+	export class ModuleInfo {
+	    name: string;
+	    category: string;
+	    trigger: string;
+	    enabled: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ModuleInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.category = source["category"];
+	        this.trigger = source["trigger"];
+	        this.enabled = source["enabled"];
+	    }
+	}
+
+}
+
 export namespace model {
 	
 	export class Asset {

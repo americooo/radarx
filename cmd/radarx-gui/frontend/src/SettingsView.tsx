@@ -5,12 +5,15 @@ import {
     GetScopeRoots,
     GetTelegramStatus,
     IsMonitoring,
+    ListModules,
     SaveTelegramChatID,
     SaveTelegramToken,
     SendTelegramTest,
+    SetModuleEnabled,
     StartMonitoring,
     StopMonitoring,
 } from '../wailsjs/go/main/App';
+import {main} from '../wailsjs/go/models';
 import {useI18n} from './i18n/LanguageContext';
 import {Language} from './i18n/storage';
 
@@ -38,6 +41,11 @@ function SettingsView() {
     const [monLoading, setMonLoading] = useState(false);
     const [monErr, setMonErr] = useState('');
 
+    const [modules, setModules] = useState<main.ModuleInfo[]>([]);
+    const [modulesLoading, setModulesLoading] = useState(true);
+    const [modulesErr, setModulesErr] = useState('');
+    const [togglingModule, setTogglingModule] = useState('');
+
     async function refresh() {
         setLoading(true);
         setLoadErr('');
@@ -63,11 +71,38 @@ function SettingsView() {
         GetTelegramStatus().then(setTgEnabled).catch(() => setTgEnabled(false));
     }
 
+    async function refreshModules() {
+        setModulesLoading(true);
+        setModulesErr('');
+        try {
+            const res = await ListModules();
+            setModules(res || []);
+        } catch (err) {
+            setModulesErr(String(err));
+        } finally {
+            setModulesLoading(false);
+        }
+    }
+
     useEffect(() => {
         refresh();
         refreshMonitoring();
         refreshTelegramStatus();
+        refreshModules();
     }, []);
+
+    async function handleToggleModule(m: main.ModuleInfo) {
+        setTogglingModule(m.name);
+        setModulesErr('');
+        try {
+            await SetModuleEnabled(m.name, !m.enabled);
+            await refreshModules();
+        } catch (err) {
+            setModulesErr(String(err));
+        } finally {
+            setTogglingModule('');
+        }
+    }
 
     async function handleSaveToken() {
         const tok = tgToken.trim();
@@ -394,6 +429,62 @@ function SettingsView() {
                 <p className="mt-3 text-xs text-slate-500">
                     {t('settings.telegram.envHint')}
                 </p>
+            </div>
+
+            <div className="mt-6 rounded-md border border-blue-900/40 bg-slate-900/40 p-4 backdrop-blur-md">
+                <h2 className="text-sm font-semibold text-slate-300">{t('settings.modules.title')}</h2>
+                <p className="mt-1 text-xs text-slate-500">
+                    {t('settings.modules.description')}
+                </p>
+
+                {modulesErr && (
+                    <div className="mt-3 rounded-md border border-red-800 bg-red-950/50 px-3 py-2 text-sm text-red-300">
+                        {modulesErr}
+                    </div>
+                )}
+
+                <div className="mt-4">
+                    {modulesLoading && <p className="text-sm text-slate-500">{t('settings.modules.loading')}</p>}
+                    {!modulesLoading && modules.length === 0 && (
+                        <p className="text-sm text-slate-500">{t('settings.modules.empty')}</p>
+                    )}
+                    {!modulesLoading && modules.length > 0 && (
+                        <div className="overflow-hidden rounded-md border border-blue-900/40">
+                            <table className="w-full text-left text-sm">
+                                <thead className="bg-slate-900/60 text-slate-400">
+                                    <tr>
+                                        <th className="px-3 py-2 font-medium">{t('settings.modules.colName')}</th>
+                                        <th className="px-3 py-2 font-medium">{t('settings.modules.colCategory')}</th>
+                                        <th className="px-3 py-2 font-medium">{t('settings.modules.colTrigger')}</th>
+                                        <th className="px-3 py-2 font-medium">{t('settings.modules.colEnabled')}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {modules.map((m) => (
+                                        <tr key={m.name} className="border-t border-blue-900/30">
+                                            <td className="px-3 py-2 font-mono text-blue-400">{m.name}</td>
+                                            <td className="px-3 py-2 text-slate-400">{m.category}</td>
+                                            <td className="px-3 py-2 text-slate-400">{m.trigger}</td>
+                                            <td className="px-3 py-2">
+                                                <button
+                                                    className={`rounded-full px-3 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                                                        m.enabled
+                                                            ? 'bg-blue-900 text-blue-300 hover:bg-blue-800'
+                                                            : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                                                    }`}
+                                                    onClick={() => handleToggleModule(m)}
+                                                    disabled={togglingModule === m.name}
+                                                >
+                                                    {m.enabled ? t('settings.telegram.enabled') : t('settings.telegram.disabled')}
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
     );

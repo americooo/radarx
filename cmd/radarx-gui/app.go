@@ -16,6 +16,7 @@ import (
 	"github.com/americooo/radarx/internal/diff"
 	"github.com/americooo/radarx/internal/engine"
 	"github.com/americooo/radarx/internal/model"
+	"github.com/americooo/radarx/internal/modules"
 	"github.com/americooo/radarx/internal/notify"
 	"github.com/americooo/radarx/internal/report"
 	"github.com/americooo/radarx/internal/scheduler"
@@ -140,6 +141,14 @@ func (a *App) StartScan(root string) error {
 			a.mu.Unlock()
 		}()
 
+		// Loaded before the scan runs so it reflects the state prior to this
+		// cycle — the same "old" snapshot the CLI's cmdScan diffs against.
+		// Absence (first-ever scan for this target) is not an error.
+		var prev model.Snapshot
+		if a.st != nil {
+			prev, _, _ = a.st.LatestSnapshot(target.ID)
+		}
+
 		snap := model.Snapshot{TargetID: target.ID, Root: target.Root, TakenAt: time.Now().UTC()}
 		var scanErr error
 		for ev := range engine.ScanStream(ctx, target, engine.ScanOptions{Workers: 40}) {
@@ -161,6 +170,12 @@ func (a *App) StartScan(root string) error {
 			if err := a.st.SaveTarget(target); err != nil {
 				log.Printf("radarx-gui: SaveTarget failed: %v", err)
 			}
+
+			d := diff.Compare(prev, snap)
+			newAssets := extractNewAssets(d)
+			for f := range modules.Run(ctx, target, newAssets, snap.Assets, a.st) {
+				runtime.EventsEmit(a.ctx, "scan:finding", f)
+			}
 		}
 
 		done := scanDoneEvent{Cancelled: cancelled}
@@ -171,6 +186,19 @@ func (a *App) StartScan(root string) error {
 	}()
 
 	return nil
+}
+
+// extractNewAssets pulls the assets that are brand-new in this diff — the
+// asset set TriggerNewAssetsOnly modules should run against. Mirrors
+// internal/scheduler.newAssetsFrom.
+func extractNewAssets(d model.DiffResult) []model.Asset {
+	var out []model.Asset
+	for _, c := range d.Changes {
+		if c.Type == model.ChangeNew && c.After != nil {
+			out = append(out, *c.After)
+		}
+	}
+	return out
 }
 
 // StopScan cancels the in-flight scan, if any. This is the only mechanism
@@ -498,4 +526,42 @@ func (a *App) SendTelegramTest() error {
 		return errors.New("no Telegram credentials configured yet")
 	}
 	return tg.SendRaw("✅ RadarX test message — Telegram alerts are working.")
+}
+
+// ModuleInfo describes one registered detection module for the Settings
+// screen's enable/disable panel.
+type ModuleInfo struct {
+	Name     string `json:"name"`
+	Category string `json:"category"`
+	Trigger  string `json:"trigger"`
+	Enabled  bool   `json:"enabled"`
+}
+
+// ListModules returns every registered detection module (internal/modules)
+// along with its current enabled/disabled state, so the Settings screen can
+// render a toggle for each. Never returns a nil slice — see the nil-slice
+// JSON-marshaling trap noted throughout this file.
+func (a *App) ListModules() ([]ModuleInfo, error) {
+	out := []ModuleInfo{}
+	if a.st == nil {
+		return out, nil
+	}
+	for _, m := range modules.All() {
+		out = append(out, ModuleInfo{
+			Name:     m.Name(),
+			Category: string(m.Category()),
+			Trigger:  string(m.Trigger()),
+			Enabled:  modules.IsEnabled(a.st, m.Name()),
+		})
+	}
+	return out, nil
+}
+
+// SetModuleEnabled persists a module's on/off toggle, read by
+// modules.Run/modules.IsEnabled on every subsequent scan.
+func (a *App) SetModuleEnabled(name string, enabled bool) error {
+	if a.st == nil {
+		return errors.New("store is not available")
+	}
+	return modules.SetEnabled(a.st, name, enabled)
 }

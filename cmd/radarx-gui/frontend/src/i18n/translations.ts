@@ -41,6 +41,14 @@ const en = {
     'scan.status.done': 'done',
     'scan.status.stopped': 'stopped',
     'scan.status.error': 'error',
+    'scan.findingsTitle': 'Module Findings',
+    'scan.findingsFound_one': 'finding',
+    'scan.findingsFound_other': 'findings',
+    'scan.noFindings': 'No findings yet.',
+    'scan.colModule': 'Module',
+    'scan.colSeverity': 'Severity',
+    'scan.colTitle': 'Title',
+    'scan.colAsset': 'Asset',
 
     // TargetsView
     'targets.title': 'Targets',
@@ -145,6 +153,16 @@ const en = {
 
     'settings.language.title': 'Language / Til',
     'settings.language.description': 'Interface language for RadarX.',
+
+    'settings.modules.title': 'Detection Modules',
+    'settings.modules.description':
+        'Toggle which detection modules run during a scan (e.g. subdomain takeover, exposed files, cloud buckets). Disabled modules are skipped entirely.',
+    'settings.modules.loading': 'Loading...',
+    'settings.modules.empty': 'No modules registered.',
+    'settings.modules.colName': 'Module',
+    'settings.modules.colCategory': 'Category',
+    'settings.modules.colTrigger': 'Trigger',
+    'settings.modules.colEnabled': 'Enabled',
 } as const;
 
 const uz: Record<TranslationKey, string> = {
@@ -184,6 +202,14 @@ const uz: Record<TranslationKey, string> = {
     'scan.status.done': 'tugadi',
     'scan.status.stopped': "to'xtatildi",
     'scan.status.error': 'xato',
+    'scan.findingsTitle': 'Modul topilmalari',
+    'scan.findingsFound_one': 'topilma',
+    'scan.findingsFound_other': 'topilma',
+    'scan.noFindings': "Hozircha topilma yo'q.",
+    'scan.colModule': 'Modul',
+    'scan.colSeverity': 'Darajasi',
+    'scan.colTitle': 'Sarlavha',
+    'scan.colAsset': 'Asset',
 
     // TargetsView
     'targets.title': 'Nishonlar',
@@ -288,6 +314,16 @@ const uz: Record<TranslationKey, string> = {
 
     'settings.language.title': 'Til / Language',
     'settings.language.description': 'RadarX interfeys tili.',
+
+    'settings.modules.title': 'Detektsiya modullari',
+    'settings.modules.description':
+        "Skan paytida qaysi detektsiya modullari ishlashini yoqing/o'chiring (masalan subdomain takeover, ochiq fayllar, cloud bucket'lar). O'chirilgan modullar butunlay o'tkazib yuboriladi.",
+    'settings.modules.loading': 'Yuklanmoqda...',
+    'settings.modules.empty': "Ro'yxatga olingan modul yo'q.",
+    'settings.modules.colName': 'Modul',
+    'settings.modules.colCategory': 'Kategoriya',
+    'settings.modules.colTrigger': 'Trigger',
+    'settings.modules.colEnabled': 'Yoqilgan',
 };
 
 export const dictionaries: Record<Language, Record<TranslationKey, string>> = {

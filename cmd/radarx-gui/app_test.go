@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/americooo/radarx/internal/model"
+	"github.com/americooo/radarx/internal/modules"
 	"github.com/americooo/radarx/internal/store"
 )
 
@@ -472,6 +473,86 @@ func TestSendTelegramTestWithoutCredentials(t *testing.T) {
 	a := testApp(t)
 	if err := a.SendTelegramTest(); err == nil {
 		t.Fatal("expected error when no Telegram credentials are configured")
+	}
+}
+
+func TestListModulesNoStore(t *testing.T) {
+	a := &App{}
+	got, err := a.ListModules()
+	if err != nil {
+		t.Fatalf("ListModules: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected empty module list without a store, got %v", got)
+	}
+}
+
+func TestListModulesDefaultsToEnabled(t *testing.T) {
+	a := testApp(t)
+	got, err := a.ListModules()
+	if err != nil {
+		t.Fatalf("ListModules: %v", err)
+	}
+	if len(got) != len(modules.All()) {
+		t.Fatalf("expected %d modules, got %d (%+v)", len(modules.All()), len(got), got)
+	}
+	for _, m := range got {
+		if m.Name == "" || m.Category == "" || m.Trigger == "" {
+			t.Fatalf("expected populated module info, got %+v", m)
+		}
+		if !m.Enabled {
+			t.Fatalf("expected module %q to be enabled by default, got %+v", m.Name, m)
+		}
+	}
+}
+
+func TestSetModuleEnabledPersists(t *testing.T) {
+	a := testApp(t)
+	all := modules.All()
+	if len(all) == 0 {
+		t.Fatal("expected at least one registered module")
+	}
+	name := all[0].Name()
+
+	if err := a.SetModuleEnabled(name, false); err != nil {
+		t.Fatalf("SetModuleEnabled: %v", err)
+	}
+
+	got, err := a.ListModules()
+	if err != nil {
+		t.Fatalf("ListModules: %v", err)
+	}
+	found := false
+	for _, m := range got {
+		if m.Name == name {
+			found = true
+			if m.Enabled {
+				t.Fatalf("expected module %q to be disabled, got %+v", name, m)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected module %q in list, got %+v", name, got)
+	}
+
+	if err := a.SetModuleEnabled(name, true); err != nil {
+		t.Fatalf("SetModuleEnabled: %v", err)
+	}
+	got, err = a.ListModules()
+	if err != nil {
+		t.Fatalf("ListModules: %v", err)
+	}
+	for _, m := range got {
+		if m.Name == name && !m.Enabled {
+			t.Fatalf("expected module %q to be re-enabled, got %+v", name, m)
+		}
+	}
+}
+
+func TestSetModuleEnabledNoStore(t *testing.T) {
+	a := &App{}
+	if err := a.SetModuleEnabled("subdomain-takeover", false); err == nil {
+		t.Fatal("expected error when store is not available")
 	}
 }
 

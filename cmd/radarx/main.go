@@ -27,6 +27,7 @@ import (
 	"github.com/americooo/radarx/internal/diff"
 	"github.com/americooo/radarx/internal/engine"
 	"github.com/americooo/radarx/internal/model"
+	"github.com/americooo/radarx/internal/modules"
 	"github.com/americooo/radarx/internal/notify"
 	"github.com/americooo/radarx/internal/report"
 	"github.com/americooo/radarx/internal/scheduler"
@@ -211,6 +212,34 @@ func cmdScan(st *store.SQLiteStore, args []string) {
 	must(st.SaveSnapshot(snap))
 	t.LastScanAt = snap.TakenAt
 	must(st.SaveTarget(t))
+
+	// Run detection modules against this scan's assets and print any
+	// findings straight to the terminal. Manual `scan` runs are one-off, so
+	// unlike the scheduler's background watch, findings here don't go through
+	// Telegram/desktop notifications — just stdout.
+	newAssets := newAssetsFrom(d)
+	findingCount := 0
+	for f := range modules.Run(ctx, t, newAssets, snap.Assets, st) {
+		findingCount++
+		fmt.Printf("  ⚠ [%s] %s: %s (%s)\n", f.Severity, f.Module, f.Title, f.Asset.Key)
+	}
+	if findingCount > 0 {
+		fmt.Printf("%d finding(s) from detection modules\n", findingCount)
+	}
+}
+
+// newAssetsFrom extracts the assets that are brand-new in this diff — the
+// asset set TriggerNewAssetsOnly modules should run against. Mirrors
+// internal/scheduler's helper of the same name; kept local here so cmd/radarx
+// doesn't need to import internal/scheduler just for this.
+func newAssetsFrom(d model.DiffResult) []model.Asset {
+	var out []model.Asset
+	for _, c := range d.Changes {
+		if c.Type == model.ChangeNew && c.After != nil {
+			out = append(out, *c.After)
+		}
+	}
+	return out
 }
 
 func cmdList(st store.Store) {
