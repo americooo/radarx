@@ -4,7 +4,18 @@
 // to JSON today and to SQLite later without changes.
 package model
 
-import "time"
+import (
+	"strings"
+	"time"
+)
+
+// SlugID derives a stable Target.ID from a root domain, shared by the CLI and
+// GUI so both write the same id to the same store (e.g. "csclub.uz" ->
+// "csclub_uz").
+func SlugID(root string) string {
+	root = strings.ToLower(strings.TrimSpace(root))
+	return strings.NewReplacer(".", "_", "/", "_", ":", "_").Replace(root)
+}
 
 // Target is a monitored scope root — a root domain the operator is authorized
 // to monitor (e.g. "example.com"). RadarX only ever expands assets *within*

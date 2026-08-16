@@ -153,7 +153,7 @@ func cmdAdd(st store.Store, args []string) {
 	}
 
 	t := model.Target{
-		ID:        slug(root),
+		ID:        model.SlugID(root),
 		Root:      root,
 		Label:     *label,
 		Enabled:   true,
@@ -170,7 +170,7 @@ func cmdScan(st store.Store, args []string) {
 		os.Exit(2)
 	}
 	root := strings.ToLower(args[0])
-	id := slug(root)
+	id := model.SlugID(root)
 
 	fs := flag.NewFlagSet("scan", flag.ExitOnError)
 	useCT := fs.Bool("ct", false, "also pull subdomains from Certificate Transparency (crt.sh)")
@@ -333,7 +333,7 @@ func cmdReport(st store.Store, args []string) {
 		os.Exit(2)
 	}
 	root := strings.ToLower(args[0])
-	id := slug(root)
+	id := model.SlugID(root)
 
 	fs := flag.NewFlagSet("report", flag.ExitOnError)
 	out := fs.String("out", "", "write to file instead of stdout")
@@ -373,7 +373,7 @@ func cmdHistory(st store.Store, args []string) {
 		fmt.Fprintln(os.Stderr, "usage: radarx history <root-domain>")
 		os.Exit(2)
 	}
-	id := slug(strings.ToLower(args[0]))
+	id := model.SlugID(args[0])
 	snaps, err := st.ListSnapshots(id)
 	must(err)
 	if len(snaps) == 0 {
@@ -440,11 +440,6 @@ func describe(a *model.Asset) string {
 	default:
 		return a.Key
 	}
-}
-
-func slug(s string) string {
-	s = strings.ToLower(strings.TrimSpace(s))
-	return strings.NewReplacer(".", "_", "/", "_", ":", "_").Replace(s)
 }
 
 func usage() {
