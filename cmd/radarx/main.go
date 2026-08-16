@@ -78,7 +78,7 @@ func openStore() (store.Store, error) {
 	if err != nil {
 		home = "."
 	}
-	return store.NewJSONStore(filepath.Join(home, ".radarx"))
+	return store.NewSQLiteStore(filepath.Join(home, ".radarx", "radarx.db"))
 }
 
 func cmdAdd(st store.Store, args []string) {
