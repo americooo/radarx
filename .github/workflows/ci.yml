@@ -23,17 +23,21 @@ jobs:
           gofmt -l . | tee /tmp/fmt.out
           test ! -s /tmp/fmt.out
 
-      # cmd/radarx-gui needs cgo + libgtk-3/libwebkit2gtk system packages and
-      # its own OS build matrix — that's handled by the dedicated GUI/release
-      # workflow, not this fast CLI+library sanity job.
+      # cmd/radarx-gui needs cgo + libgtk-3/libwebkit2gtk system packages, its
+      # own OS build matrix, and a built frontend/dist for its //go:embed —
+      # that's handled by the dedicated release workflow, not this fast
+      # CLI+library sanity job. Listed explicitly (not "./..." minus a grep)
+      # because `go list ./...` itself fails outright when cmd/radarx-gui's
+      # embed pattern can't find frontend/dist, taking every other package
+      # down with it.
       - name: Vet
-        run: go vet $(go list ./... | grep -v /cmd/radarx-gui)
+        run: go vet ./cmd/radarx/... ./internal/...
 
       - name: Test
-        run: go test -race $(go list ./... | grep -v /cmd/radarx-gui)
+        run: go test -race ./cmd/radarx/... ./internal/...
 
       - name: Build
-        run: go build $(go list ./... | grep -v /cmd/radarx-gui)
+        run: go build ./cmd/radarx/... ./internal/...
 
   cross-compile:
     name: cross-compile
