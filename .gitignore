@@ -1,10 +1,16 @@
 # Binaries
 /radarx
 /radarx.exe
+/radarx-gui
 /dist/
 *.exe
 *.test
 *.out
+
+# Wails GUI build output + frontend deps/build artifacts
+cmd/radarx-gui/build/bin/
+cmd/radarx-gui/frontend/node_modules/
+cmd/radarx-gui/frontend/dist/
 
 # RadarX runtime data (never commit scan results / scopes)
 .radarx/

@@ -13,8 +13,9 @@ Bog'liqlik faqat bir tomonlama — yuqoridan pastga.
                         └────────────┬─────────────┘
                                      │
                         ┌────────────┴─────────────┐
-                        │  cmd/radarx-gui (Wails)   │   REJALASHTIRILGAN
-                        │  (hali yo'q — Faza 3)     │   frontend/ (React+TS)
+                        │  cmd/radarx-gui (Wails)   │   Faza 3 — mavjud
+                        │  main.go + app.go +       │   frontend/ (React+TS+Tailwind,
+                        │  frontend/ (birodar papka)│   cmd/radarx-gui/ ichida)
                         └────────────┬─────────────┘
                                      │  ikkalasi ham quyidagilarni chaqiradi:
         ┌────────────────────┬──────┴───────┬────────────────────┐
@@ -70,10 +71,27 @@ Bog'liqlik faqat bir tomonlama — yuqoridan pastga.
 - **`cmd/radarx`** (`cmd/radarx/main.go`) — mavjud CLI. Engine/store/diff/notify
   paketlarini import qilib chaqiradi. Buzilmasligi kerak bo'lgan "tirik test".
 
-- **`cmd/radarx-gui`** (hali yo'q, Faza 3'da qo'shiladi) — Wails v2 entry
-  point. Xuddi CLI kabi faqat yuqoridagi paketlarni chaqiradi, lekin natijalarni
-  Wails `EmitEvent` orqali React frontend'ga uzatadi. `internal/engine` bu
-  paket haqida hech narsa bilmaydi va bilmasligi ham kerak.
+- **`cmd/radarx-gui`** (Faza 3'da qo'shildi) — Wails v2 entry point. Xuddi
+  CLI kabi faqat yuqoridagi paketlarni chaqiradi (`internal/engine`,
+  `internal/model`), lekin natijalarni Wails `runtime.EventsEmit` orqali React
+  frontend'ga uzatadi. `internal/engine` bu paket haqida hech narsa bilmaydi
+  va bilmasligi ham kerak. `App` struct (`app.go`) `StartScan(root string)
+  error` va `StopScan() error` metodlarini bind qiladi: `StartScan`
+  `context.WithCancel` bilan yangi ctx ochadi, uni `App`ga (mutex bilan
+  himoyalangan) saqlaydi va fon goroutine'da `engine.ScanStream`ni ishga
+  tushirib, har `ScanEvent`ni `"scan:asset"`/`"scan:done"` event sifatida
+  frontend'ga uzatadi; `StopScan` shu ctx'ni cancel qiladi — bu "Stop"
+  tugmasining yagona mexanizmi (`CLAUDE.md`dagi context qoidasiga mos).
+
+  **Papka joylashuvi haqida eslatma:** Roadmap dastlab `frontend/`ni repo
+  ildizida, `cmd/radarx-gui/`dan alohida ko'rsatgan edi. Lekin Go'ning
+  `//go:embed all:frontend/dist` direktivasi faqat manba fayli joylashgan
+  papka va uning PASTKI papkalarini qamrab oladi (`..` bilan yuqoriga chiqib
+  bo'lmaydi) — shuning uchun `frontend/` `main.go` bilan bir xil papkada
+  (`cmd/radarx-gui/frontend/`) birodar sifatida joylashtirildi. Bu — standart
+  `wails init` layout'i. Loyiha bitta Go moduli (`github.com/americooo/radarx`)
+  ichida qoladi, `cmd/radarx-gui/`ning alohida `go.mod`i yo'q — Wails
+  bog'liqliklari repo ildizidagi yagona `go.mod`ga qo'shilgan.
 
 - **`internal/web`** (`internal/web/server.go`) — eski, faqat standart
   kutubxona bilan yozilgan JS dashboard. Wails GUI kelganda undan foydalanish

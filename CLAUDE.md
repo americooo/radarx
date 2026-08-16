@@ -40,8 +40,15 @@ Hozirgi haqiqiy holat:
 ```
 radarx/
 ├── cmd/
-│   └── radarx/              # mavjud CLI (add, scan, list, watch, serve, report, history, test-telegram)
-│       └── main.go
+│   ├── radarx/              # mavjud CLI (add, scan, list, watch, serve, report, history, test-telegram)
+│   │   └── main.go
+│   └── radarx-gui/          # Wails v2 desktop GUI (Faza 3) — main.go, app.go va frontend/
+│       ├── main.go          # //go:embed all:frontend/dist
+│       ├── app.go           # App{ctx, cancel} — StartScan/StopScan bind qilingan metodlar
+│       ├── wails.json
+│       └── frontend/        # React+TS+Vite+Tailwind (frontend/ shu yerda, repo ildizida EMAS —
+│                             #   //go:embed faqat pastki papkalarni ko'radi, shuning uchun
+│                             #   main.go bilan bir xil papkada birodar bo'lishi shart)
 ├── internal/
 │   ├── engine/               # barcha scan logikasi (sof Go, tashqi binary yo'q)
 │   │   ├── scanner.go        # Scan(ctx, target, opts) model.Snapshot — asosiy kirish nuqtasi
@@ -61,9 +68,9 @@ radarx/
 └── .claude/commands/            # slash command'lar
 ```
 
-**Rejalashtirilgan, hali mavjud emas:** `cmd/radarx-gui/` (Wails entry point),
-`internal/scope/` (scope enforcement), `frontend/` (React app), SQLite store
-implementatsiyasi. Bularni qo'shishdan oldin shu faylni yangilang.
+`cmd/radarx-gui/` (Wails skeleton, Faza 3) va SQLite store implementatsiyasi
+(Faza 2) yuqoridagi diagrammada aks ettirilgan. `internal/scope/` (scope
+enforcement, Faza 6) alohida ishlanmoqda.
 
 ## Naming konvensiyalari
 
